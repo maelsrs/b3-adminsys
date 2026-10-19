@@ -1,0 +1,9 @@
+- name: Redémarrer chrony
+  ansible.builtin.service:
+    name: chrony
+    state: restarted
+
+- name: Redémarrer w32time
+  ansible.windows.win_service:
+    name: W32Time
+    state: restarted

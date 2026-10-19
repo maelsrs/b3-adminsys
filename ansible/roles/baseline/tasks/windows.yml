@@ -1,0 +1,44 @@
+- name: Définir le nom d'hôte
+  ansible.windows.win_hostname:
+    name: "{{ inventory_hostname }}"
+  register: baseline_win_hostname
+
+- name: Redémarrer pour appliquer le nom d'hôte
+  ansible.windows.win_reboot:
+  when: baseline_win_hostname.reboot_required
+
+- name: Définir le fuseau horaire
+  ansible.windows.win_timezone:
+    timezone: "{{ baseline_win_timezone }}"
+
+- name: Configurer les serveurs NTP
+  ansible.windows.win_regedit:
+    path: HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters
+    name: NtpServer
+    data: "{{ baseline_ntp_servers | map('regex_replace', '$', ',0x8') | join(' ') }}"
+    type: string
+  notify: Redémarrer w32time
+
+- name: Synchroniser sur les serveurs NTP manuels
+  ansible.windows.win_regedit:
+    path: HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters
+    name: Type
+    data: NTP
+    type: string
+  notify: Redémarrer w32time
+
+- name: Démarrer le service de temps
+  ansible.windows.win_service:
+    name: W32Time
+    start_mode: auto
+    state: started
+
+- name: Créer le compte admin
+  ansible.windows.win_user:
+    name: "{{ baseline_admin_user }}"
+    password: "{{ baseline_admin_password }}"
+    password_never_expires: true
+    groups:
+      - "{{ baseline_win_admin_group }}"
+    groups_action: add
+  no_log: true

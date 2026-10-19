@@ -1,4 +1,6 @@
----
-- name: Site
+- name: Baseline commune Linux et Windows
   hosts: all
-  roles: []
+  vars_files:
+    - vault/secrets.yml
+  roles:
+    - baseline

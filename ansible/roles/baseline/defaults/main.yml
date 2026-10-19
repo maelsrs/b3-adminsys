@@ -1,0 +1,7 @@
+baseline_timezone: Etc/UTC
+baseline_win_timezone: UTC
+baseline_ntp_servers:
+  - pool.ntp.org
+baseline_admin_user: admin
+baseline_admin_ssh_key: ""
+baseline_win_admin_group: Administrators

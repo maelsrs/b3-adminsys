@@ -1,0 +1,50 @@
+- name: Définir le nom d'hôte
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: Résoudre le nom d'hôte localement
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\s'
+    line: "127.0.1.1 {{ inventory_hostname }}"
+
+- name: Définir le fuseau horaire
+  community.general.timezone:
+    name: "{{ baseline_timezone }}"
+
+- name: Installer chrony
+  ansible.builtin.apt:
+    name: chrony
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Configurer les serveurs NTP
+  ansible.builtin.template:
+    src: chrony.conf.j2
+    dest: /etc/chrony/chrony.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Redémarrer chrony
+
+- name: Démarrer chrony
+  ansible.builtin.service:
+    name: chrony
+    state: started
+    enabled: true
+
+- name: Créer le compte admin
+  ansible.builtin.user:
+    name: "{{ baseline_admin_user }}"
+    password: "{{ baseline_admin_password_hash }}"
+    groups: sudo
+    append: true
+    shell: /bin/bash
+  no_log: true
+
+- name: Autoriser la clé SSH du compte admin
+  ansible.posix.authorized_key:
+    user: "{{ baseline_admin_user }}"
+    key: "{{ baseline_admin_ssh_key }}"
+  when: baseline_admin_ssh_key | length > 0
