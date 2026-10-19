@@ -1,0 +1,5 @@
+ansible_user: ansible
+ansible_become: true
+ansible_become_method: sudo
+
+baseline_admin_password_hash: "{{ vault_admin_password_hash }}"

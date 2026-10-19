@@ -1,0 +1,8 @@
+ansible_connection: winrm
+ansible_port: 5985
+ansible_winrm_transport: ntlm
+ansible_user: Administrateur
+ansible_password: "{{ vault_win_password }}"
+
+baseline_admin_password: "{{ vault_admin_password }}"
+baseline_win_admin_group: Administrateurs
