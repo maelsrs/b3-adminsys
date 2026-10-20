@@ -29,8 +29,6 @@
     enabled: true
   when: ansible_facts['os_family'] != 'Alpine'
 
-# Le script OpenRC de FRR affiche l'état de chaque démon sans le mot « started » :
-# le module service le croit arrêté et le relance à chaque passage
 - name: Activer FRR au démarrage (Alpine)
   ansible.builtin.service:
     name: frr

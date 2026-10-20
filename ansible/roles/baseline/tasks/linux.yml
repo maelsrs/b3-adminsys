@@ -57,7 +57,6 @@
     shell: /bin/bash
   no_log: true
 
-# Préfixe 00 : lu en premier, donc une règle plus précise (ex. NOPASSWD du compte ansible) garde la priorité
 - name: Donner sudo au groupe wheel (Alpine)
   ansible.builtin.copy:
     content: "%wheel ALL=(ALL:ALL) ALL\n"
