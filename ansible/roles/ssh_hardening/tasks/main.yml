@@ -1,0 +1,7 @@
+- name: Durcissement SSH Linux
+  ansible.builtin.include_tasks: linux.yml
+  when: ansible_facts['os_family'] != 'Windows'
+
+- name: OpenSSH Windows
+  ansible.builtin.include_tasks: windows.yml
+  when: ansible_facts['os_family'] == 'Windows'

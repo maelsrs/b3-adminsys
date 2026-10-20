@@ -1,0 +1,20 @@
+- name: Créer le groupe ssh-admins
+  ansible.builtin.group:
+    name: "{{ ssh_hardening_group }}"
+    state: present
+
+- name: Ajouter le compte admin au groupe ssh-admins
+  ansible.builtin.user:
+    name: "{{ baseline_admin_user }}"
+    groups: "{{ ssh_hardening_group }}"
+    append: true
+
+- name: Durcissement sshd
+  ansible.builtin.template:
+    src: 10-durcissement.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-durcissement.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: sshd -t -f /dev/null
+  notify: Recharger sshd

@@ -5,6 +5,13 @@
   roles:
     - baseline
 
+- name: Durcissement SSH (Linux + Windows)
+  hosts: linux,windows
+  vars_files:
+    - vault/secrets.yml
+  roles:
+    - ssh_hardening
+
 - name: Routeurs (IP, routage, pare-feu, tunnel, OSPF)
   hosts: routers
   vars_files:

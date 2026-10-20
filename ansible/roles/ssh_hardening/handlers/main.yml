@@ -1,0 +1,10 @@
+- name: Valider sshd
+  ansible.builtin.command: sshd -t
+  listen: Recharger sshd
+  changed_when: false
+
+- name: Recharger sshd
+  ansible.builtin.service:
+    name: ssh
+    state: reloaded
+  listen: Recharger sshd

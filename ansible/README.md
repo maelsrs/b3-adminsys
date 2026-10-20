@@ -3,6 +3,39 @@
 Construit une Debian (site A) et un Windows Server Core (site B) avec un rôle `baseline` :
 nom d'hôte, fuseau horaire, NTP, compte admin.
 
+## Architecture
+
+```mermaid
+graph TD
+  subgraph site_a["Site A — Lille (10.1.10.0/24)"]
+    deb01["deb01\n10.1.10.x\nDebian"]
+    rtr_a["rtr-a\neth1 10.1.10.1/24\neth2 192.0.2.1/24\nwg0 10.255.0.1/30"]
+  end
+
+  subgraph site_b["Site B — Dunkerque (10.1.20.0/24)"]
+    rtr_b["rtr-b\neth1 10.1.20.1/24\neth2 192.0.2.2/24\nwg0 10.255.0.2/30"]
+    win01["win01\n10.1.20.x\nWindows Server"]
+  end
+
+  subgraph wan["WAN (192.0.2.0/24)"]
+    rtr_a -- "WireGuard wg0\n10.255.0.0/30\nOSPF point-to-point" --- rtr_b
+  end
+
+  deb01 -->|"GW 10.1.10.1"| rtr_a
+  win01 -->|"GW 10.1.20.1"| rtr_b
+
+  rtr_a -. "eth0 (mgmt Ansible)\n192.168.0.40" .-> ctrl
+  rtr_b -. "eth0 (mgmt Ansible)\n192.168.0.49" .-> ctrl
+  deb01 -. "eth0\n192.168.0.38" .-> ctrl
+  win01 -. "192.168.0.13" .-> ctrl
+
+  ctrl(["Contrôleur Ansible"])
+
+  style wan fill:#1a3a3a,color:#fff,stroke:#4a9a8a
+  style site_a fill:#1a2a3a,color:#fff,stroke:#4a7a9a
+  style site_b fill:#1a2a3a,color:#fff,stroke:#4a7a9a
+```
+
 ## Prérequis sur le contrôleur
 
 ```sh
@@ -86,3 +119,37 @@ ssh ansible@192.168.0.40 sudo vtysh -c '"show ip ospf neighbor"' -c '"show ip ro
 
 Créer le groupe `site_c` dans `inventory/hosts.yml` et `inventory/group_vars/site_c.yml`.
 Le rôle ne change pas.
+
+## Rôles par hôte
+
+| Hôte | baseline | router | wireguard | frr | ssh_hardening |
+|------|:--------:|:------:|:---------:|:---:|:-------------:|
+| deb01 | ✅ | — | — | — | ✅ |
+| win01 | ✅ | — | — | — | — (WinRM) |
+| rtr-a | ✅ | ✅ | ✅ | ✅ | ✅ |
+| rtr-b | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+> 🔲 = à créer · ✅ = en place
+
+## Administration à distance (MC03)
+
+Rôle `ssh_hardening` (Linux uniquement) :
+
+- `/etc/ssh/sshd_config.d/10-durcissement.conf` : `PermitRootLogin no`, `PasswordAuthentication no`, `AllowGroups {{ ssh_hardening_group }}`, `MaxAuthTries 3`, `LoginGraceTime 30`, `X11Forwarding no`
+- Handler : `sshd -t` → `systemctl reload ssh` (validation avant rechargement)
+- Le groupe `ssh_hardening_group` (défaut : `ssh-admins`) changera en MC6 pour un groupe AD
+
+Windows — PowerShell Remoting (WinRM déjà actif) :
+
+```powershell
+Enter-PSSession -ComputerName win01 -Credential (Get-Credential)
+Invoke-Command -ComputerName win01 -ScriptBlock { hostname }
+```
+
+```sh
+# Vérification Linux
+ssh root@<ip>                              # doit être refusé
+ssh -o PubkeyAuthentication=no admin@<ip> # doit être refusé
+ssh admin@<ip>                             # doit passer
+journalctl -u ssh --since today            # lire les tentatives
+```
