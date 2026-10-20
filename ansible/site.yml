@@ -4,3 +4,13 @@
     - vault/secrets.yml
   roles:
     - baseline
+
+- name: Routeurs (IP, routage, pare-feu, tunnel, OSPF)
+  hosts: routers
+  vars_files:
+    - vault/secrets.yml
+    - vault/wireguard.yml
+  roles:
+    - router
+    - wireguard
+    - frr

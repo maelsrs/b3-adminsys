@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+{% set peer = hostvars[wg_peer] %}
+[Interface]
+Address    = {{ wg_address }}
+ListenPort = {{ wg_listen_port }}
+PrivateKey = {{ wg_private_key }}
+MTU        = {{ wg_mtu }}
+# wg-quick ne pose aucune route : c'est OSPF qui décide
+Table      = off
+# OSPF envoie ses hellos en multicast, désactivé par défaut sur une interface WireGuard
+PostUp     = ip link set %i multicast on
+
+[Peer]
+# {{ wg_peer }}
+PublicKey  = {{ peer.wg_public_key }}
+Endpoint   = {{ (peer.router_interfaces | selectattr('role', 'equalto', 'wan') | first).address | split('/') | first }}:{{ wg_listen_port }}
+# Un seul pair par tunnel : il accepte tous les réseaux que OSPF lui envoie
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = {{ wg_keepalive }}

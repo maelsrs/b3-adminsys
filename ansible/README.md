@@ -58,6 +58,30 @@ ansible-playbook site.yml
 ansible-playbook site.yml   # le 2e passage doit afficher changed=0
 ```
 
+## Routeurs (MC02)
+
+`rtr-a` et `rtr-b` (Alpine) : rôles `router` (IP, routage, nftables), `wireguard` (tunnel `wg0`)
+et `frr` (OSPF). Ansible passe par `eth0`, que ces rôles ne touchent jamais.
+
+| | rtr-a | rtr-b |
+|---|---|---|
+| eth1 (LAN) | 10.1.10.1/24 | 10.1.20.1/24 |
+| eth2 (WAN) | 192.0.2.1/24 | 192.0.2.2/24 |
+| wg0 | 10.255.0.1/30 | 10.255.0.2/30 |
+
+- Réseau : `ifupdown-ng`, un fichier par interface dans `/etc/network/interfaces.d/`
+  (`lan`, `wan`, `wg0`). C'est l'outil natif d'Alpine, sans systemd.
+- WireGuard : `wg-quick` (via `use wireguard-quick`), `Table = off` et `AllowedIPs = 0.0.0.0/0` :
+  aucune route statique, c'est OSPF qui les pose.
+- MTU : les réseaux internes passent dans le vxlan Proxmox (1400), d'où un tunnel à 1320.
+- Clés privées : `vault/wireguard.yml` (même mot de passe que `vault/secrets.yml`), clés
+  publiques dans `inventory/host_vars/`.
+
+```sh
+ansible-playbook site.yml -l routers
+ssh ansible@192.168.0.40 sudo vtysh -c '"show ip ospf neighbor"' -c '"show ip route ospf"'
+```
+
 ## Ajouter un site
 
 Créer le groupe `site_c` dans `inventory/hosts.yml` et `inventory/group_vars/site_c.yml`.

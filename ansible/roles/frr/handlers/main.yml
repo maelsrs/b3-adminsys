@@ -1,0 +1,4 @@
+- name: Redémarrer FRR
+  ansible.builtin.service:
+    name: frr
+    state: restarted

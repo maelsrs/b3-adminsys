@@ -1,0 +1,6 @@
+# {{ ansible_managed }}
+# {{ item.role | upper }}
+auto {{ item.name }}
+iface {{ item.name }} inet static
+	address {{ item.address }}
+	mtu {{ router_mtu }}

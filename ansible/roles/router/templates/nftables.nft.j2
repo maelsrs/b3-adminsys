@@ -1,0 +1,44 @@
+#!/usr/sbin/nft -f
+# {{ ansible_managed }}
+{% set lans = router_interfaces | selectattr('role', 'equalto', 'lan') | map(attribute='name') | list %}
+{% set wans = router_interfaces | selectattr('role', 'equalto', 'wan') | map(attribute='name') | list %}
+flush ruleset
+
+table ip nat {
+  chain postrouting {
+    type nat hook postrouting priority 100;
+    oifname "{{ router_mgmt_if }}" ip saddr {{ router_nat_source }} masquerade
+  }
+}
+
+table inet filter {
+  # Ce qui est destiné au routeur lui-même
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iif "lo" accept
+    ct state established,related accept
+    ct state invalid drop
+    meta l4proto { icmp, ipv6-icmp } accept
+    iifname "{{ router_mgmt_if }}" tcp dport 22 accept                  # Ansible
+    iifname "{{ router_mgmt_if }}" udp sport 67 udp dport 68 accept     # DHCP
+{% for lan in lans %}
+    iifname "{{ lan }}" tcp dport 22 accept                  # admin depuis le site
+{% endfor %}
+{% for wan in wans %}
+    iifname "{{ wan }}" udp dport {{ wg_listen_port }} accept                  # WireGuard
+{% endfor %}
+    iifname "{{ wg_interface }}" meta l4proto 89 accept                # OSPF
+  }
+
+  # Ce qui traverse le routeur
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    tcp flags syn tcp option maxseg size set rt mtu
+    ct state established,related accept
+{% for lan in lans %}
+    iifname "{{ lan }}" oifname "{{ router_mgmt_if }}" accept             # LAN -> Internet
+    iifname "{{ lan }}" oifname "{{ wg_interface }}" accept                # site -> site
+    iifname "{{ wg_interface }}" oifname "{{ lan }}" accept
+{% endfor %}
+  }
+}

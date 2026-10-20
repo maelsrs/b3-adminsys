@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+auto lo
+iface lo inet loopback
+iface lo inet6 loopback
+
+# Gestion et sortie Internet : Ansible passe par ici, le rôle ne la modifie pas
+auto {{ router_mgmt_if }}
+iface {{ router_mgmt_if }} inet dhcp
+iface {{ router_mgmt_if }} inet6 auto
+
+source-directory /etc/network/interfaces.d

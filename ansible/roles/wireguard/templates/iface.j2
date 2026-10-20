@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+# Tunnel vers {{ wg_peer }}
+auto {{ wg_interface }}
+{% if ansible_facts['os_family'] == 'Alpine' %}
+iface {{ wg_interface }}
+	use wireguard-quick
+{% else %}
+iface {{ wg_interface }} inet manual
+	up wg-quick up {{ wg_interface }}
+	down wg-quick down {{ wg_interface }}
+{% endif %}

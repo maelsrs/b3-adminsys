@@ -1,0 +1,23 @@
+! {{ ansible_managed }}
+{% set lans = router_interfaces | selectattr('role', 'equalto', 'lan') | list %}
+frr defaults traditional
+hostname {{ inventory_hostname }}
+log syslog informational
+!
+! WireGuard ne transporte pas le multicast comme un LAN : OSPF doit le savoir
+interface {{ wg_interface }}
+ ip ospf network point-to-point
+!
+{% for lan in lans %}
+! On annonce le LAN, mais on n'y parle pas OSPF
+interface {{ lan.name }}
+ ip ospf passive
+!
+{% endfor %}
+router ospf
+ ospf router-id {{ wg_address | split('/') | first }}
+ network {{ ospf_tunnel_network }} area {{ ospf_area }}
+{% for lan in lans %}
+ network {{ lan.network }} area {{ ospf_area }}
+{% endfor %}
+!

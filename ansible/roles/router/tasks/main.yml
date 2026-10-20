@@ -1,0 +1,70 @@
+- name: Charger les variables propres à l'OS
+  ansible.builtin.include_vars: "{{ ansible_facts['os_family'] }}.yml"
+
+- name: Ne pas couper la branche (l'interface de gestion n'est pas gérée ici)
+  ansible.builtin.assert:
+    that: router_mgmt_if not in (router_interfaces | map(attribute='name'))
+    fail_msg: "{{ router_mgmt_if }} est l'interface par laquelle Ansible parle : retirez-la de router_interfaces"
+
+- name: Installer nftables
+  ansible.builtin.package:
+    name: nftables
+    state: present
+
+- name: Activer le routage IPv4
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_file: /etc/sysctl.d/99-routeur.conf
+    reload: true
+
+- name: Fichier réseau principal (gestion + inclusion de interfaces.d)
+  ansible.builtin.template:
+    src: interfaces.j2
+    dest: /etc/network/interfaces
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Créer le dossier interfaces.d
+  ansible.builtin.file:
+    path: /etc/network/interfaces.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Une configuration par interface
+  ansible.builtin.template:
+    src: iface.j2
+    dest: "/etc/network/interfaces.d/{{ item.role }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ router_interfaces }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.role }})"
+  register: router_iface_files
+
+- name: Appliquer les interfaces modifiées
+  ansible.builtin.shell: "ifdown {{ item.item.name }}; ifup {{ item.item.name }}"
+  loop: "{{ router_iface_files.results | selectattr('changed') | list }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  changed_when: true
+
+- name: Écrire les règles du pare-feu
+  ansible.builtin.template:
+    src: nftables.nft.j2
+    dest: "{{ router_nftables_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: nft -c -f %s
+  notify: Recharger nftables
+
+- name: Démarrer nftables
+  ansible.builtin.service:
+    name: nftables
+    state: started
+    enabled: true

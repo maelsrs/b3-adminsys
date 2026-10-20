@@ -1,0 +1,3 @@
+- name: Recharger nftables
+  ansible.builtin.command: "nft -f {{ router_nftables_conf }}"
+  changed_when: true

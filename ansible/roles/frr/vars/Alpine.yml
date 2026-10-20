@@ -1,0 +1,3 @@
+frr_packages:
+  - frr
+  - frr-openrc

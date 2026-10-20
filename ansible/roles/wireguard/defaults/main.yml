@@ -1,0 +1,4 @@
+wg_interface: wg0
+wg_listen_port: 51820
+wg_mtu: 1420
+wg_keepalive: 25

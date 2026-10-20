@@ -1,0 +1,7 @@
+router_mgmt_if: eth0
+router_mtu: 1500
+router_interfaces: []
+# Ce qui sort sur Internet par l'interface de gestion est masqué derrière le routeur
+router_nat_source: 10.1.0.0/16
+wg_interface: wg0
+wg_listen_port: 51820

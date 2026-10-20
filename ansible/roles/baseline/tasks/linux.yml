@@ -1,3 +1,6 @@
+- name: Charger les variables propres à l'OS
+  ansible.builtin.include_vars: "{{ ansible_facts['os_family'] }}.yml"
+
 - name: Définir le nom d'hôte
   ansible.builtin.hostname:
     name: "{{ inventory_hostname }}"
@@ -8,16 +11,27 @@
     regexp: '^127\.0\.1\.1\s'
     line: "127.0.1.1 {{ inventory_hostname }}"
 
-- name: Définir le fuseau horaire
-  community.general.timezone:
-    name: "{{ baseline_timezone }}"
-
 - name: Installer chrony
   ansible.builtin.apt:
     name: chrony
     state: present
     update_cache: true
     cache_valid_time: 3600
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Installer chrony, tzdata et sudo (Alpine)
+  community.general.apk:
+    name:
+      - chrony
+      - tzdata
+      - sudo
+    state: present
+    update_cache: true
+  when: ansible_facts['os_family'] == 'Alpine'
+
+- name: Définir le fuseau horaire
+  community.general.timezone:
+    name: "{{ baseline_timezone }}"
 
 - name: Configurer les serveurs NTP
   ansible.builtin.template:
@@ -30,7 +44,7 @@
 
 - name: Démarrer chrony
   ansible.builtin.service:
-    name: chrony
+    name: "{{ baseline_chrony_service }}"
     state: started
     enabled: true
 
@@ -38,10 +52,21 @@
   ansible.builtin.user:
     name: "{{ baseline_admin_user }}"
     password: "{{ baseline_admin_password_hash }}"
-    groups: sudo
+    groups: "{{ baseline_admin_group }}"
     append: true
     shell: /bin/bash
   no_log: true
+
+# Préfixe 00 : lu en premier, donc une règle plus précise (ex. NOPASSWD du compte ansible) garde la priorité
+- name: Donner sudo au groupe wheel (Alpine)
+  ansible.builtin.copy:
+    content: "%wheel ALL=(ALL:ALL) ALL\n"
+    dest: /etc/sudoers.d/00-wheel
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s
+  when: ansible_facts['os_family'] == 'Alpine'
 
 - name: Autoriser la clé SSH du compte admin
   ansible.posix.authorized_key:

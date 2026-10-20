@@ -1,0 +1,13 @@
+router_interfaces:
+  - name: eth1
+    role: lan
+    address: 10.1.10.1/24
+    network: 10.1.10.0/24
+  - name: eth2
+    role: wan
+    address: 192.0.2.1/24
+
+wg_address: 10.255.0.1/30
+wg_public_key: HN40t4Wrmmy6L8fYy7aYJcfRzrV+8+PPFlvD56zvOTg=
+wg_private_key: "{{ vault_wg_rtr_a }}"
+wg_peer: rtr-b

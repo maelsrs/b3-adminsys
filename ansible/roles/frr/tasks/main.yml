@@ -1,0 +1,44 @@
+- name: Charger les variables propres à l'OS
+  ansible.builtin.include_vars: "{{ ansible_facts['os_family'] }}.yml"
+
+- name: Installer FRR
+  ansible.builtin.package:
+    name: "{{ frr_packages }}"
+    state: present
+
+- name: Activer le démon OSPF
+  ansible.builtin.lineinfile:
+    path: /etc/frr/daemons
+    regexp: '^ospfd='
+    line: ospfd=yes
+  notify: Redémarrer FRR
+
+- name: Configurer OSPF
+  ansible.builtin.template:
+    src: frr.conf.j2
+    dest: /etc/frr/frr.conf
+    owner: frr
+    group: frr
+    mode: "0640"
+  notify: Redémarrer FRR
+
+- name: Démarrer FRR
+  ansible.builtin.service:
+    name: frr
+    state: started
+    enabled: true
+  when: ansible_facts['os_family'] != 'Alpine'
+
+# Le script OpenRC de FRR affiche l'état de chaque démon sans le mot « started » :
+# le module service le croit arrêté et le relance à chaque passage
+- name: Activer FRR au démarrage (Alpine)
+  ansible.builtin.service:
+    name: frr
+    enabled: true
+  when: ansible_facts['os_family'] == 'Alpine'
+
+- name: Démarrer FRR (Alpine)
+  ansible.builtin.command: rc-service frr start
+  register: frr_start
+  changed_when: "'already been started' not in frr_start.stderr + frr_start.stdout"
+  when: ansible_facts['os_family'] == 'Alpine'

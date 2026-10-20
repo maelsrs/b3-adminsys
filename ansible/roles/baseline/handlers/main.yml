@@ -1,6 +1,6 @@
 - name: Redémarrer chrony
   ansible.builtin.service:
-    name: chrony
+    name: "{{ baseline_chrony_service }}"
     state: restarted
 
 - name: Redémarrer w32time

@@ -1,0 +1,39 @@
+- name: Charger les variables propres à l'OS
+  ansible.builtin.include_vars: "{{ ansible_facts['os_family'] }}.yml"
+
+- name: Installer WireGuard
+  ansible.builtin.package:
+    name: "{{ wg_packages }}"
+    state: present
+
+- name: Créer le dossier de configuration
+  ansible.builtin.file:
+    path: /etc/wireguard
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Configurer le tunnel (clé privée lue dans le vault)
+  ansible.builtin.template:
+    src: wg.conf.j2
+    dest: "/etc/wireguard/{{ wg_interface }}.conf"
+    owner: root
+    group: root
+    mode: "0600"
+  diff: false
+  register: wg_conf
+
+- name: Monter le tunnel au démarrage
+  ansible.builtin.template:
+    src: iface.j2
+    dest: "/etc/network/interfaces.d/{{ wg_interface }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: wg_iface
+
+- name: Appliquer la configuration du tunnel
+  ansible.builtin.shell: "ifdown {{ wg_interface }}; ifup {{ wg_interface }}"
+  when: wg_conf is changed or wg_iface is changed
+  changed_when: true
