@@ -1,0 +1,9 @@
+# DC a Dunkerque
+ansible_user: Administrateur
+baseline_win_admin_group: Administrateurs
+
+baseline_win_lan:
+  mac: BC-24-11-85-10-CA
+  address: 10.1.20.30
+  prefix: 24
+  gateway: 10.1.20.1

@@ -7,7 +7,7 @@
   microsoft.ad.ou:
     name: "{{ item }}"
     path: "OU={{ ad_ou_root }},{{ ad_base }}"
-  loop: "{{ ad_ous + ad_sites }}"
+  loop: "{{ ad_ous + ad_sites | map(attribute='name') }}"
 
 - name: OU de service dans chaque site
   microsoft.ad.ou:
@@ -39,8 +39,9 @@
     path: "OU=Utilisateurs,OU={{ item.site }},OU={{ ad_ou_root }},{{ ad_base }}"
     password: "{{ vault_pwd_init }}"
     update_password: on_create
+    # Domain Users est le groupe principal : AD refuse de le retirer, set doit l'inclure
     groups:
-      set: "{{ item.groups }}"
+      set: "{{ item.groups + ['Domain Users'] }}"
   loop: "{{ ad_users }}"
   loop_control:
     label: "{{ item.name }}"

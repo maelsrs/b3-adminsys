@@ -5,7 +5,15 @@ ad_base:  "DC=loginord,DC=internal"
 # Arborescence : OU racine, OU transverses, puis sites × services
 ad_ou_root: LogiNord
 ad_ous: [Groupes, Admins, Départs]
-ad_sites: [Lille, Dunkerque]
+ad_sites: 
+  - name: lille
+    subnet: 10.1.10.0/24
+  - name: bunkerque
+    subnet: 10.1.20.0/24
+ad_site_link:
+  name: Lille-Dunkerque
+  cost: 100
+  frequency: 15
 ad_site_ous: [Utilisateurs, Serveurs]
 
 ad_groups:

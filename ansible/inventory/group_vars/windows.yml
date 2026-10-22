@@ -1,8 +1,11 @@
 ansible_connection: winrm
 ansible_port: 5985
 ansible_winrm_transport: ntlm
-ansible_user: Administrateur
+ansible_user: Administrator
 ansible_password: "{{ vault_win_password }}"
 
 baseline_admin_password: "{{ vault_admin_password }}"
-baseline_win_admin_group: Administrateurs
+baseline_win_admin_group: Administrators
+
+# Clé publique déposée dans administrators_authorized_keys (rôle ssh_hardening)
+baseline_admin_ssh_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIyv+/IyrXy2SlLQkD03jKHFBER1pH1yuFIQPon0Y6jF bot"

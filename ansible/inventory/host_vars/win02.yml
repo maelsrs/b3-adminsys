@@ -1,4 +1,4 @@
-# ISO anglaise : compte et groupe admin en anglais
+# DC a lille
 ansible_user: Administrator
 baseline_win_admin_group: Administrators
 
