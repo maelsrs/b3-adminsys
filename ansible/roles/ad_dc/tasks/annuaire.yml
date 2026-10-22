@@ -1,0 +1,47 @@
+- name: OU racine
+  microsoft.ad.ou:
+    name: "{{ ad_ou_root }}"
+    path: "{{ ad_base }}"
+
+- name: OU transverses et OU de site
+  microsoft.ad.ou:
+    name: "{{ item }}"
+    path: "OU={{ ad_ou_root }},{{ ad_base }}"
+  loop: "{{ ad_ous + ad_sites }}"
+
+- name: OU de service dans chaque site
+  microsoft.ad.ou:
+    name: "{{ item.1 }}"
+    path: "OU={{ item.0 }},OU={{ ad_ou_root }},{{ ad_base }}"
+  loop: "{{ ad_sites | product(ad_site_ous) | list }}"
+  loop_control:
+    label: "{{ item.0 }}/{{ item.1 }}"
+
+# Les GG doivent exister avant les DL qui les contiennent : l'ordre de ad_groups compte
+- name: Groupes (AGDLP)
+  microsoft.ad.group:
+    name: "{{ item.name }}"
+    scope: "{{ item.scope }}"
+    path: "OU=Groupes,OU={{ ad_ou_root }},{{ ad_base }}"
+    members:
+      add: "{{ item.members | default([]) }}"
+  loop: "{{ ad_groups }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Utilisateurs de test
+  microsoft.ad.user:
+    name: "{{ item.name }}"
+    sam_account_name: "{{ item.name }}"
+    upn: "{{ item.name }}@{{ ad_domain }}"
+    firstname: "{{ item.firstname }}"
+    surname: "{{ item.surname }}"
+    path: "OU=Utilisateurs,OU={{ item.site }},OU={{ ad_ou_root }},{{ ad_base }}"
+    password: "{{ vault_pwd_init }}"
+    update_password: on_create
+    groups:
+      set: "{{ item.groups }}"
+  loop: "{{ ad_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true

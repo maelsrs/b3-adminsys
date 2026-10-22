@@ -42,3 +42,40 @@
       - "{{ baseline_win_admin_group }}"
     groups_action: add
   no_log: true
+
+# IP fixe sur la carte LAN, retrouvée par son adresse MAC. Pas de passerelle par défaut :
+# Internet et Ansible passent par la carte de gestion, les sites par une route 10.1.0.0/16.
+- name: IP fixe sur le LAN
+  ansible.windows.win_powershell:
+    parameters:
+      Mac: "{{ baseline_win_lan.mac }}"
+      Address: "{{ baseline_win_lan.address }}"
+      Prefix: "{{ baseline_win_lan.prefix }}"
+      Gateway: "{{ baseline_win_lan.gateway }}"
+    script: |
+      param($Mac, $Address, [int]$Prefix, $Gateway)
+      $Ansible.Changed = $false
+      $nic = Get-NetAdapter | Where-Object MacAddress -eq $Mac
+      if ($nic.Name -ne 'LAN') {
+        Rename-NetAdapter -Name $nic.Name -NewName LAN
+        $Ansible.Changed = $true
+      }
+      $ip = Get-NetIPAddress -InterfaceAlias LAN -AddressFamily IPv4 -ErrorAction SilentlyContinue
+      if (-not ($ip | Where-Object { $_.IPAddress -eq $Address -and $_.PrefixLength -eq $Prefix })) {
+        Set-NetIPInterface -InterfaceAlias LAN -Dhcp Disabled
+        $ip | Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
+        New-NetIPAddress -InterfaceAlias LAN -IPAddress $Address -PrefixLength $Prefix | Out-Null
+        $Ansible.Changed = $true
+      }
+      if (-not (Get-NetRoute -DestinationPrefix 10.1.0.0/16 -NextHop $Gateway -ErrorAction SilentlyContinue)) {
+        New-NetRoute -InterfaceAlias LAN -DestinationPrefix 10.1.0.0/16 -NextHop $Gateway | Out-Null
+        $Ansible.Changed = $true
+      }
+      # Le DC ne doit publier dans le DNS que son IP LAN
+      Get-NetAdapter | Where-Object Name -ne LAN | ForEach-Object {
+        if ((Get-DnsClient -InterfaceIndex $_.ifIndex).RegisterThisConnectionsAddress) {
+          Set-DnsClient -InterfaceIndex $_.ifIndex -RegisterThisConnectionsAddress $false
+          $Ansible.Changed = $true
+        }
+      }
+  when: baseline_win_lan is defined

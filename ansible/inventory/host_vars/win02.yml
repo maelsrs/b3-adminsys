@@ -1,0 +1,10 @@
+# ISO anglaise : compte et groupe admin en anglais
+ansible_user: Administrator
+baseline_win_admin_group: Administrators
+
+# net1 Proxmox (vmbr1, VLAN 10) : LAN Lille. La carte de gestion reste en DHCP.
+baseline_win_lan:
+  mac: BC-24-11-C7-44-23
+  address: 10.1.10.10
+  prefix: 24
+  gateway: 10.1.10.1

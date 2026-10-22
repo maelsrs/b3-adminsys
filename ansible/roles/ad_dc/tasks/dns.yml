@@ -1,0 +1,41 @@
+- name: Zones inverses intégrées à AD
+  ansible.windows.win_dns_zone:
+    name: "{{ item }}"
+    type: primary
+    replication: domain
+    dynamic_update: secure
+  loop: "{{ ad_dns_reverse_zones }}"
+
+- name: Enregistrements A
+  ansible.windows.win_dns_record:
+    zone: "{{ ad_domain }}"
+    name: "{{ item.name }}"
+    type: A
+    value: "{{ item.ip }}"
+  loop: "{{ ad_dns_records }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# 10.1.20.20 → zone 20.1.10.in-addr.arpa, nom 20
+- name: Enregistrements PTR
+  ansible.windows.win_dns_record:
+    zone: "{{ item.ip.split('.')[:3] | reverse | join('.') }}.in-addr.arpa"
+    name: "{{ item.ip.split('.')[3] }}"
+    type: PTR
+    value: "{{ item.name }}.{{ ad_domain }}"
+  loop: "{{ ad_dns_records }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Redirecteurs DNS
+  ansible.windows.win_powershell:
+    parameters:
+      Forwarders: "{{ ad_dns_forwarders }}"
+    script: |
+      param([string[]]$Forwarders)
+      $Ansible.Changed = $false
+      $current = @((Get-DnsServerForwarder).IPAddress | ForEach-Object { $_.IPAddressToString })
+      if (($current -join ',') -ne ($Forwarders -join ',')) {
+        Set-DnsServerForwarder -IPAddress $Forwarders
+        $Ansible.Changed = $true
+      }

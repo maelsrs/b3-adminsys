@@ -1,0 +1,62 @@
+ad_domain:  loginord.internal
+ad_netbios: LOGINORD
+ad_base:  "DC=loginord,DC=internal"
+
+# Arborescence : OU racine, OU transverses, puis sites × services
+ad_ou_root: LogiNord
+ad_ous: [Groupes, Admins, Départs]
+ad_sites: [Lille, Dunkerque]
+ad_site_ous: [Utilisateurs, Serveurs]
+
+ad_groups:
+  - name: GG_Compta
+    scope: global
+  - name: GG_Direction
+    scope: global
+  - name: GG_Adminsys
+    scope: global
+  - name: DL_Partage_Adminsys_RW
+    scope: domainlocal
+    members: [GG_Adminsys]
+  - name: DL_Partage_Direction_RW
+    scope: domainlocal
+    members: [GG_Direction]
+  - name: DL_Partage_Compta_RW
+    scope: domainlocal
+    members: [GG_Compta]
+
+ad_users:
+  - name: test2.test2
+    firstname: Test2
+    surname: Test2
+    site: Lille
+    groups: [GG_Adminsys]
+  - name: test.test
+    firstname: Test
+    surname: Test
+    site: Dunkerque
+    groups: [GG_Direction]
+  - name: alice.martin
+    firstname: Alice
+    surname: Martin
+    site: Lille
+    groups: [GG_Compta]
+
+# DNS : zones inverses (une par LAN), enregistrements A + PTR, redirecteurs
+ad_dns_reverse_zones:
+  - 10.1.10.in-addr.arpa
+  - 20.1.10.in-addr.arpa
+ad_dns_records:
+  - name: trackr
+    ip: 10.1.20.20
+ad_dns_forwarders: [1.1.1.1, 9.9.9.9]
+
+# DHCP : le DC racine est à Lille (site A). Dunkerque viendra avec son DC (MC05).
+ad_dc_ip: "{{ ansible_facts['ip_addresses'] | select('match', '^10\\.1\\.') | first }}"
+ad_dhcp_scopes:
+  - name: Lille
+    scope_id: 10.1.10.0
+    start: 10.1.10.100
+    end: 10.1.10.200
+    mask: 255.255.255.0
+    router: 10.1.10.1

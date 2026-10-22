@@ -1,0 +1,11 @@
+- name: Forêt AD
+  ansible.builtin.import_tasks: forest.yml
+
+- name: Annuaire (OU, groupes, utilisateurs)
+  ansible.builtin.import_tasks: annuaire.yml
+
+- name: DNS
+  ansible.builtin.import_tasks: dns.yml
+
+- name: DHCP
+  ansible.builtin.import_tasks: dhcp.yml

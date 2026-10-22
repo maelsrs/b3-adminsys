@@ -1,0 +1,20 @@
+- name: AD-Domain-Services
+  ansible.windows.win_feature:
+    name: AD-Domain-Services
+    include_management_tools: true
+
+- name: AD-domain
+  microsoft.ad.domain:
+    dns_domain_name: "{{ ad_domain }}"
+    domain_netbios_name: "{{ ad_netbios }}"
+    safe_mode_password: "{{ vault_dsrm }}"
+    reboot: true
+
+- name: Attendre que l'AD soit prêt
+  ansible.windows.win_powershell:
+    script: Get-ADDomain -ErrorAction Stop
+  register: ad_ready
+  until: ad_ready is succeeded
+  retries: 30
+  delay: 10
+  changed_when: false

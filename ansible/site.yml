@@ -21,3 +21,10 @@
     - router
     - wireguard
     - frr
+
+- name: Mise en place de l'AD
+  hosts: domain_controllers
+  vars_files:
+    - vault/secrets.yml
+  roles:
+    - ad_dc

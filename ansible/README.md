@@ -76,6 +76,8 @@ Adapter les IP dans `inventory/hosts.yml`.
 vault_win_password: "<mot de passe Administrateur Windows>"
 vault_admin_password: "<mot de passe du compte admin Windows>"
 vault_admin_password_hash: "<sortie de : openssl passwd -6>"
+vault_dsrm: "<mot de passe DSRM (restauration AD)>"
+vault_pwd_init: "<mot de passe initial des utilisateurs AD>"
 ```
 
 ```sh
@@ -122,12 +124,12 @@ Le rôle ne change pas.
 
 ## Rôles par hôte
 
-| Hôte | baseline | router | wireguard | frr | ssh_hardening |
-|------|:--------:|:------:|:---------:|:---:|:-------------:|
-| deb01 | ✅ | — | — | — | ✅ |
-| win01 | ✅ | — | — | — | — (WinRM) |
-| rtr-a | ✅ | ✅ | ✅ | ✅ | ✅ |
-| rtr-b | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Hôte | baseline | router | wireguard | frr | ssh_hardening | ad_dc |
+|------|:--------:|:------:|:---------:|:---:|:-------------:|:-----:|
+| deb01 | ✅ | — | — | — | ✅ | — |
+| win01 | ✅ | — | — | — | — (WinRM) | ✅ |
+| rtr-a | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| rtr-b | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 
 > 🔲 = à créer · ✅ = en place
 
@@ -152,4 +154,29 @@ ssh root@<ip>                              # doit être refusé
 ssh -o PubkeyAuthentication=no admin@<ip> # doit être refusé
 ssh admin@<ip>                             # doit passer
 journalctl -u ssh --since today            # lire les tentatives
+```
+
+## Active Directory en code (MC04)
+
+Rôle `ad_dc` sur `domain_controllers` (win01), variables dans `inventory/group_vars/domain_controllers.yml` :
+
+1. **Forêt** : rôle AD DS, forêt `loginord.internal` (pas de `.local`), redémarrage, puis attente
+   que l'AD réponde (`Get-ADDomain` en `retries`/`until`).
+2. **Annuaire** : `LogiNord > {Lille,Dunkerque} > {Utilisateurs,Serveurs}`, plus `Groupes`, `Admins`,
+   `Départs`. Les OU de site sont générées par `ad_sites × ad_site_ous`. Groupes en AGDLP
+   (`GG_*` = qui, `DL_*` = quoi), utilisateurs de test (`update_password: on_create`, `groups: set`).
+3. **DNS** : zones inverses intégrées à AD, `trackr` en A + PTR, redirecteurs.
+4. **DHCP** : rôle, autorisation dans AD (`Add-DhcpServerInDC`), étendue Dunkerque + options
+   (passerelle, DNS = IP du DC en 10.1.x, suffixe). PowerShell idempotent via `$Ansible.Changed`.
+
+```sh
+ansible-playbook site.yml -l domain_controllers
+ansible-playbook site.yml -l domain_controllers   # changed=0
+```
+
+```powershell
+nslookup trackr.loginord.internal
+nslookup 10.1.20.20
+Get-DhcpServerv4Scope
+Get-ADOrganizationalUnit -Filter * | select DistinguishedName
 ```
