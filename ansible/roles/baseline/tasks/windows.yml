@@ -27,6 +27,17 @@
     type: string
   notify: Redémarrer w32time
 
+# W32Time annonce une incertitude (root dispersion) qui gonfle entre deux synchronisations :
+# à 1024 s, elle dépasse 16 s et chrony (MC06) rejette la source (RFC 5905). À 64 s, elle reste
+# de l'ordre de la seconde.
+- name: Interroger la source de temps au moins toutes les 64 s
+  ansible.windows.win_regedit:
+    path: HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Config
+    name: MaxPollInterval
+    data: "{{ baseline_win_ntp_max_poll }}"
+    type: dword
+  notify: Redémarrer w32time
+
 - name: Démarrer le service de temps
   ansible.windows.win_service:
     name: W32Time
@@ -43,8 +54,9 @@
     groups_action: add
   no_log: true
 
-# IP fixe sur la carte LAN, retrouvée par son adresse MAC. Pas de passerelle par défaut :
-# Internet et Ansible passent par la carte de gestion, les sites par une route 10.1.0.0/16.
+# IP fixe sur la carte LAN, retrouvée par son adresse MAC. Les sites passent par une route
+# 10.1.0.0/16, Internet par la passerelle par défaut du LAN (NAT du routeur). Tant qu'une carte de
+# gestion reste branchée, sa passerelle DHCP (métrique 0) passe avant celle du LAN (256).
 - name: IP fixe sur le LAN
   ansible.windows.win_powershell:
     parameters:
@@ -69,6 +81,10 @@
       }
       if (-not (Get-NetRoute -DestinationPrefix 10.1.0.0/16 -NextHop $Gateway -ErrorAction SilentlyContinue)) {
         New-NetRoute -InterfaceAlias LAN -DestinationPrefix 10.1.0.0/16 -NextHop $Gateway | Out-Null
+        $Ansible.Changed = $true
+      }
+      if (-not (Get-NetRoute -DestinationPrefix 0.0.0.0/0 -NextHop $Gateway -ErrorAction SilentlyContinue)) {
+        New-NetRoute -InterfaceAlias LAN -DestinationPrefix 0.0.0.0/0 -NextHop $Gateway | Out-Null
         $Ansible.Changed = $true
       }
       # Le DC ne doit publier dans le DNS que son IP LAN

@@ -8,6 +8,8 @@ baseline_admin_ssh_key: ""
 baseline_win_admin_group: S-1-5-32-544
 # Source de temps : les serveurs NTP pour un serveur hors domaine et pour le PDC,
 # la hiérarchie du domaine (NT5DS) pour les autres DC et les membres
+# Intervalle maximal entre deux synchronisations, en puissance de 2 secondes (6 = 64 s)
+baseline_win_ntp_max_poll: 6
 baseline_win_ntp_type: >-
   {{ 'NTP' if ansible_facts['windows_domain_role'] in ['Stand-alone server', 'Primary domain controller']
      else 'NT5DS' }}

@@ -1,14 +1,7 @@
-ad_domain:  loginord.internal
-ad_netbios: LOGINORD
-ad_base:  "DC=loginord,DC=internal"
+# ad_domain, ad_base, ad_admin… : group_vars/all/ad.yml (partagés avec les membres Linux)
 
 # Le DC qui crée la forêt (et porte les objets de l'annuaire) ; les autres DC la rejoignent
 ad_forest_root: "{{ groups['domain_controllers'] | first }}"
-# Administrateur du domaine : l'Administrator local de la racine devenu compte de domaine,
-# il a gardé son mot de passe
-ad_admin: "Administrator@{{ ad_domain }}"
-ad_admin_password: "{{ vault_win_password }}"
-
 # IP LAN du DC (celle qu'il publie dans le DNS)
 ad_dc_ip: "{{ baseline_win_lan.address }}"
 # DNS client d'un DC : la racine d'abord, puis lui-même (voir README, MC05)
@@ -33,7 +26,6 @@ ad_site_link:
   notification: true
 
 # Arborescence : OU racine, OU transverses, puis sites × services
-ad_ou_root: LogiNord
 ad_ous: [Groupes, Admins, Départs]
 ad_site_ous: [Utilisateurs, Serveurs]
 
@@ -43,6 +35,11 @@ ad_groups:
   - name: GG_Direction
     scope: global
   - name: GG_Adminsys
+    scope: global
+  # MC06 : connexion aux Debian (+ sudo pour les admins)
+  - name: GG_Admins_Linux
+    scope: global
+  - name: GG_Developpeurs
     scope: global
   - name: DL_Partage_Adminsys_RW
     scope: domainlocal
@@ -59,7 +56,7 @@ ad_users:
     firstname: Test2
     surname: Test2
     site: Lille
-    groups: [GG_Adminsys]
+    groups: [GG_Adminsys, GG_Admins_Linux]
   - name: test.test
     firstname: Test
     surname: Test
@@ -70,6 +67,11 @@ ad_users:
     surname: Martin
     site: Lille
     groups: [GG_Compta]
+  - name: bob.leroy
+    firstname: Bob
+    surname: Leroy
+    site: Dunkerque
+    groups: [GG_Developpeurs]
 
 # DNS : zones inverses (une par LAN), enregistrements A + PTR, redirecteurs
 ad_dns_reverse_zones:

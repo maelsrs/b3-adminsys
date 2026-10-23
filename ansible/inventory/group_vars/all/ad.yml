@@ -1,0 +1,11 @@
+# Le domaine, vu par les DC (MC04) et par les membres Linux (MC06)
+ad_domain:  loginord.internal
+ad_netbios: LOGINORD
+ad_base:  "DC=loginord,DC=internal"
+ad_ou_root: LogiNord
+
+# Administrateur du domaine : l'Administrator local de la racine devenu compte de domaine,
+# il a gardé son mot de passe
+ad_admin_user: Administrator
+ad_admin: "{{ ad_admin_user }}@{{ ad_domain }}"
+ad_admin_password: "{{ vault_win_password }}"

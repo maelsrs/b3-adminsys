@@ -1,1 +1,3 @@
 ssh_hardening_group: ssh-admins
+# Groupes AD (MC06) : autorisés en plus, et seuls à pouvoir entrer par mot de passe
+ssh_hardening_ad_groups: []

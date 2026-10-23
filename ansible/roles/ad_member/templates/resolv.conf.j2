@@ -1,0 +1,5 @@
+# {{ ansible_managed }}
+search {{ ad_domain }}
+{% for ip in ad_member_dcs %}
+nameserver {{ ip }}
+{% endfor %}

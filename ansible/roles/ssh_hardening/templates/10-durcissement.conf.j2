@@ -3,7 +3,15 @@ PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes
-AllowGroups {{ ssh_hardening_group }}
+{# SSSD présente les groupes AD en minuscules, et AllowGroups / Match Group respectent la casse #}
+AllowGroups {{ ([ssh_hardening_group] + ssh_hardening_ad_groups | map('lower') | list) | join(' ') }}
 MaxAuthTries 3
 LoginGraceTime 30
 X11Forwarding no
+{% if ssh_hardening_ad_groups %}
+
+# Comptes AD : mot de passe vérifié par SSSD (Kerberos). Les comptes locaux restent à clé.
+# Un Match dure jusqu'à la fin de ce fichier : il doit rester en dernier.
+Match Group {{ ssh_hardening_ad_groups | map('lower') | join(',') }}
+    PasswordAuthentication yes
+{% endif %}

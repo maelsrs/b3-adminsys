@@ -32,6 +32,26 @@
     label: "{{ item.name }}"
   when: inventory_hostname == ad_forest_root
 
+# Le serveur DNS publie une IP pour chaque carte où il écoute : la carte de gestion y était
+# (192.168.0.x, IPv6). Les DC se parlaient par là, sans passer par le tunnel. Chaque DC ne
+# garde que son IP LAN ; les autres DC voient la suppression par réplication.
+- name: Le nom du DC ne pointe que sur son IP LAN
+  ansible.windows.win_powershell:
+    parameters:
+      Zone: "{{ ad_domain }}"
+      Address: "{{ ad_dc_ip }}"
+    script: |
+      param($Zone, $Address)
+      $Ansible.Changed = $false
+      $name = $env:COMPUTERNAME.ToLower()
+      Get-DnsServerResourceRecord -ZoneName $Zone -Name $name -ErrorAction SilentlyContinue |
+        Where-Object { $_.RecordType -eq 'AAAA' -or
+                       ($_.RecordType -eq 'A' -and $_.RecordData.IPv4Address.IPAddressToString -ne $Address) } |
+        ForEach-Object {
+          Remove-DnsServerResourceRecord -ZoneName $Zone -InputObject $_ -Force
+          $Ansible.Changed = $true
+        }
+
 - name: Redirecteurs DNS
   ansible.windows.win_powershell:
     parameters:

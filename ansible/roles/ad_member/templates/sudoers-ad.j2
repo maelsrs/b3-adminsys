@@ -1,0 +1,5 @@
+# {{ ansible_managed }}
+# Groupes AD en minuscules : c'est ainsi que SSSD les présente
+{% for group in ad_member_sudo_groups %}
+%{{ group | lower }} ALL=(ALL:ALL) ALL
+{% endfor %}

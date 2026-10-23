@@ -1,0 +1,7 @@
+# {{ ansible_managed }}
+[libdefaults]
+    default_realm = {{ ad_domain | upper }}
+    # Les KDC (les DC) sont trouvés par les enregistrements SRV du DNS de l'AD
+    dns_lookup_kdc = true
+    dns_lookup_realm = false
+    rdns = false

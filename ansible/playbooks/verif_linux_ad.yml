@@ -1,0 +1,42 @@
+# Vérifications MC06, en lecture seule : ansible-playbook playbooks/verif_linux_ad.yml
+- name: Debian dans le domaine
+  hosts: ad_members
+  gather_facts: false
+  vars:
+    ad_users: "{{ hostvars[groups['domain_controllers'] | first].ad_users }}"
+  tasks:
+    - name: Domaine joint
+      ansible.builtin.command: realm list --name-only
+      register: verif_realm
+      changed_when: false
+
+    - name: Identité et groupes AD de chaque compte
+      ansible.builtin.command: id {{ item.name }}
+      loop: "{{ ad_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: verif_id
+      changed_when: false
+      failed_when: false
+
+    # Simule une connexion SSH sans mot de passe : la décision d'accès de SSSD, et pourquoi
+    - name: Accès SSH autorisé ou refusé par SSSD
+      # sssctl écrit le verdict sur stderr, le reste sur stdout : on fusionne
+      ansible.builtin.shell: sssctl user-checks -s sshd -a acct {{ item.name }} 2>&1
+      loop: "{{ ad_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: verif_access
+      changed_when: false
+      failed_when: false
+
+    - name: Résultat
+      ansible.builtin.debug:
+        msg:
+          domaine: "{{ verif_realm.stdout_lines }}"
+          id: "{{ verif_id.results | map(attribute='stdout') | list }}"
+          acces: >-
+            {{ dict(verif_access.results | map(attribute='item.name')
+                    | zip(verif_access.results | map(attribute='stdout')
+                          | map('regex_findall', 'pam_acct_mgmt: .*') | map('first')
+                          | map('regex_replace', '^pam_acct_mgmt: ', ''))) }}

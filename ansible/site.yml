@@ -28,3 +28,11 @@
     - vault/secrets.yml
   roles:
     - ad_dc
+
+# Après les DC : le domaine doit exister pour le joindre
+- name: Debian membres du domaine (realmd, SSSD, sudo)
+  hosts: ad_members
+  vars_files:
+    - vault/secrets.yml
+  roles:
+    - ad_member

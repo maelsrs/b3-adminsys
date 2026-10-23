@@ -1,0 +1,9 @@
+# Serveur Linux à Lille, membre du domaine (MC06)
+
+# net1 Proxmox (vmbr1, VLAN 10) : LAN Lille, carte à ajouter à la VM. La carte de gestion
+# (ens18) reste en DHCP.
+baseline_linux_lan:
+  iface: ens19
+  address: 10.1.10.20
+  prefix: 24
+  gateway: 10.1.10.1

@@ -1,0 +1,33 @@
+# {{ ansible_managed }}
+[sssd]
+domains = {{ ad_domain }}
+config_file_version = 2
+services = nss, pam
+
+[domain/{{ ad_domain }}]
+id_provider = ad
+ad_domain = {{ ad_domain }}
+krb5_realm = {{ ad_domain | upper }}
+realmd_tags = manages-system joined-with-adcli
+# Nom complet : SSSD inscrit la machine dans le DNS sous ce nom (hostname ne rend que deb01)
+ad_hostname = {{ inventory_hostname }}.{{ ad_domain }}
+# Les DC du site d'abord : Dunkerque reste servi par son DC quand le lien tombe
+ad_site = {{ ad_site }}
+# UID/GID calculés depuis le SID : les mêmes sur toutes les Debian
+ldap_id_mapping = True
+
+# alice.martin plutôt que alice.martin@loginord.internal
+use_fully_qualified_names = False
+fallback_homedir = /home/%u
+default_shell = /bin/bash
+
+# Hors ligne (DC injoignable) : les comptes déjà connus entrent encore. Un compte désactivé
+# aussi, jusqu'au retour du DC : sss_cache -E au départ d'un salarié
+cache_credentials = True
+krb5_store_password_if_offline = True
+
+# Qui a le droit d'entrer ; les autres comptes AD sont refusés (journal : journalctl -u sssd)
+access_provider = simple
+simple_allow_groups = {{ ad_member_login_groups | map('lower') | join(', ') }}
+# Par défaut SSSD applique les GPO de connexion Windows : source de refus « inexplicables »
+ad_gpo_access_control = permissive

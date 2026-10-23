@@ -3,11 +3,15 @@
     name: "{{ ssh_hardening_group }}"
     state: present
 
-- name: Ajouter le compte admin au groupe ssh-admins
+# Le compte Ansible aussi : sinon AllowGroups lui ferme la porte au rechargement de sshd
+- name: Ajouter les comptes admin et Ansible au groupe ssh-admins
   ansible.builtin.user:
-    name: "{{ baseline_admin_user }}"
+    name: "{{ item }}"
     groups: "{{ ssh_hardening_group }}"
     append: true
+  loop:
+    - "{{ baseline_admin_user }}"
+    - "{{ ansible_user }}"
 
 - name: Durcissement sshd
   ansible.builtin.template:
@@ -16,5 +20,5 @@
     owner: root
     group: root
     mode: "0644"
-    validate: sshd -t -f /dev/null
+    validate: sshd -t -f %s
   notify: Recharger sshd
