@@ -7,13 +7,13 @@
   microsoft.ad.ou:
     name: "{{ item }}"
     path: "OU={{ ad_ou_root }},{{ ad_base }}"
-  loop: "{{ ad_ous + ad_sites | map(attribute='name') }}"
+  loop: "{{ ad_ous + ad_sites | map(attribute='name') | list }}"
 
 - name: OU de service dans chaque site
   microsoft.ad.ou:
     name: "{{ item.1 }}"
     path: "OU={{ item.0 }},OU={{ ad_ou_root }},{{ ad_base }}"
-  loop: "{{ ad_sites | product(ad_site_ous) | list }}"
+  loop: "{{ ad_sites | map(attribute='name') | product(ad_site_ous) | list }}"
   loop_control:
     label: "{{ item.0 }}/{{ item.1 }}"
 

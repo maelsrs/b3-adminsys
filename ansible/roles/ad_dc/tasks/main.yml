@@ -1,8 +1,23 @@
-- name: Forêt AD
+# Les tâches avancent en parallèle sur tous les DC : l'ordre ci-dessous garantit que la forêt
+# et les sites existent avant qu'un autre DC ne la rejoigne.
+- name: Forêt AD (racine)
   ansible.builtin.import_tasks: forest.yml
+  when: inventory_hostname == ad_forest_root
 
-- name: Annuaire (OU, groupes, utilisateurs)
+- name: DNS client des DC
+  ansible.builtin.import_tasks: dns_client.yml
+
+- name: Sites, sous-réseaux et lien de site (racine)
+  ansible.builtin.import_tasks: sites.yml
+  when: inventory_hostname == ad_forest_root
+
+- name: Annuaire (OU, groupes, utilisateurs), répliqué vers les autres DC
   ansible.builtin.import_tasks: annuaire.yml
+  when: inventory_hostname == ad_forest_root
+
+- name: Promotion des autres DC dans leur site
+  ansible.builtin.import_tasks: replica.yml
+  when: inventory_hostname != ad_forest_root
 
 - name: DNS
   ansible.builtin.import_tasks: dns.yml

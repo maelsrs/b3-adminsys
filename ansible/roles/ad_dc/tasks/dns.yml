@@ -1,3 +1,5 @@
+# Zones et enregistrements sont dans l'annuaire : écrits sur la racine, répliqués partout.
+# Les redirecteurs sont un réglage de chaque serveur DNS.
 - name: Zones inverses intégrées à AD
   ansible.windows.win_dns_zone:
     name: "{{ item }}"
@@ -5,6 +7,7 @@
     replication: domain
     dynamic_update: secure
   loop: "{{ ad_dns_reverse_zones }}"
+  when: inventory_hostname == ad_forest_root
 
 - name: Enregistrements A
   ansible.windows.win_dns_record:
@@ -15,6 +18,7 @@
   loop: "{{ ad_dns_records }}"
   loop_control:
     label: "{{ item.name }}"
+  when: inventory_hostname == ad_forest_root
 
 # 10.1.20.20 → zone 20.1.10.in-addr.arpa, nom 20
 - name: Enregistrements PTR
@@ -26,6 +30,7 @@
   loop: "{{ ad_dns_records }}"
   loop_control:
     label: "{{ item.name }}"
+  when: inventory_hostname == ad_forest_root
 
 - name: Redirecteurs DNS
   ansible.windows.win_powershell:

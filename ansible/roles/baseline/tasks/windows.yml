@@ -19,11 +19,11 @@
     type: string
   notify: Redémarrer w32time
 
-- name: Synchroniser sur les serveurs NTP manuels
+- name: Choisir la source de temps (NTP ou hiérarchie du domaine)
   ansible.windows.win_regedit:
     path: HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters
     name: Type
-    data: NTP
+    data: "{{ baseline_win_ntp_type }}"
     type: string
   notify: Redémarrer w32time
 

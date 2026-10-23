@@ -1,0 +1,36 @@
+# Vérifications MC05, en lecture seule : ansible-playbook playbooks/verif_ad.yml
+- name: État de la réplication AD
+  hosts: domain_controllers
+  gather_facts: false
+  vars_files:
+    - ../vault/secrets.yml
+  tasks:
+    # become : une vraie session avec mot de passe. Sans elle, repadmin et dcdiag ne peuvent pas
+    # s'authentifier auprès de l'autre DC (le « double hop » WinRM, MC01) : accès refusé.
+    - name: Site, santé du DC, réplication, comptes vus par ce DC
+      ansible.windows.win_powershell:
+        parameters:
+          SearchBase: "OU={{ ad_ou_root }},{{ ad_base }}"
+        script: |
+          param($SearchBase)
+          $Ansible.Changed = $false
+          # Les outils en ligne de commande écrivent dans la page de code OEM (850 en français)
+          $oem = [Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage
+          [Console]::OutputEncoding = [Text.Encoding]::GetEncoding($oem)
+          [pscustomobject]@{
+            site        = (nltest /dsgetsite)[0]
+            dcdiag      = @(dcdiag /q)          # vide = aucune erreur
+            replsummary = @(repadmin /replsummary)
+            comptes     = @(Get-ADUser -Server localhost -SearchBase $SearchBase -Filter * |
+                            Sort-Object SamAccountName | ForEach-Object SamAccountName)
+          }
+      become: true
+      become_method: runas
+      become_user: "{{ ad_admin }}"
+      vars:
+        ansible_become_password: "{{ ad_admin_password }}"
+      register: verif
+
+    - name: Résultat
+      ansible.builtin.debug:
+        var: verif.output[0]

@@ -1,0 +1,16 @@
+# Un DC ne doit interroger que les DNS de l'AD : sinon il cherche loginord.internal sur
+# Internet. Toutes les cartes, y compris celle de gestion (Ansible s'y connecte par IP).
+- name: Serveurs DNS du DC
+  ansible.windows.win_powershell:
+    parameters:
+      Servers: "{{ ad_dns_client }}"
+    script: |
+      param([string[]]$Servers)
+      $Ansible.Changed = $false
+      Get-NetAdapter | Where-Object Status -eq Up | ForEach-Object {
+        $current = (Get-DnsClientServerAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4).ServerAddresses
+        if ((@($current) -join ',') -ne ($Servers -join ',')) {
+          Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses $Servers
+          $Ansible.Changed = $true
+        }
+      }

@@ -1,7 +1,7 @@
-# DC a Dunkerque
-ansible_user: Administrateur
-baseline_win_admin_group: Administrateurs
+# DC à Dunkerque. ISO française : renommer d'abord le compte local Administrateur en
+# Administrator (voir README, MC05), le nom que porte l'administrateur du domaine.
 
+# net1 Proxmox : LAN Dunkerque. La carte de gestion reste en DHCP.
 baseline_win_lan:
   mac: BC-24-11-85-10-CA
   address: 10.1.20.30

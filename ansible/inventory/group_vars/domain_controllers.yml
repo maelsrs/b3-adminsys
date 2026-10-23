@@ -2,18 +2,39 @@ ad_domain:  loginord.internal
 ad_netbios: LOGINORD
 ad_base:  "DC=loginord,DC=internal"
 
-# Arborescence : OU racine, OU transverses, puis sites × services
-ad_ou_root: LogiNord
-ad_ous: [Groupes, Admins, Départs]
-ad_sites: 
-  - name: lille
+# Le DC qui crée la forêt (et porte les objets de l'annuaire) ; les autres DC la rejoignent
+ad_forest_root: "{{ groups['domain_controllers'] | first }}"
+# Administrateur du domaine : l'Administrator local de la racine devenu compte de domaine,
+# il a gardé son mot de passe
+ad_admin: "Administrator@{{ ad_domain }}"
+ad_admin_password: "{{ vault_win_password }}"
+
+# IP LAN du DC (celle qu'il publie dans le DNS)
+ad_dc_ip: "{{ baseline_win_lan.address }}"
+# DNS client d'un DC : la racine d'abord, puis lui-même (voir README, MC05)
+ad_dns_client: "{{ [hostvars[ad_forest_root].baseline_win_lan.address, ad_dc_ip] | unique }}"
+
+# Sites AD : un site = un sous-réseau, son étendue DHCP servie par le DC du site.
+# Un 3e site = une entrée de plus (et ad_site dans le group_vars du site).
+# Le premier site reprend Default-First-Site-Name.
+ad_sites:
+  - name: Lille
     subnet: 10.1.10.0/24
-  - name: bunkerque
+    dhcp: {start: 10.1.10.100, end: 10.1.10.200, mask: 255.255.255.0, router: 10.1.10.1}
+  - name: Dunkerque
     subnet: 10.1.20.0/24
+    dhcp: {start: 10.1.20.100, end: 10.1.20.200, mask: 255.255.255.0, router: 10.1.20.1}
+# Un seul lien qui relie tous les sites ; 180 min par défaut, 15 au minimum
 ad_site_link:
   name: Lille-Dunkerque
   cost: 100
   frequency: 15
+  # Bonus MC05 : notification de changement, réplication quasi immédiate entre sites
+  notification: true
+
+# Arborescence : OU racine, OU transverses, puis sites × services
+ad_ou_root: LogiNord
+ad_ous: [Groupes, Admins, Départs]
 ad_site_ous: [Utilisateurs, Serveurs]
 
 ad_groups:
@@ -58,13 +79,3 @@ ad_dns_records:
   - name: trackr
     ip: 10.1.20.20
 ad_dns_forwarders: [1.1.1.1, 9.9.9.9]
-
-# DHCP : le DC racine est à Lille (site A). Dunkerque viendra avec son DC (MC05).
-ad_dc_ip: "{{ ansible_facts['ip_addresses'] | select('match', '^10\\.1\\.') | first }}"
-ad_dhcp_scopes:
-  - name: Lille
-    scope_id: 10.1.10.0
-    start: 10.1.10.100
-    end: 10.1.10.200
-    mask: 255.255.255.0
-    router: 10.1.10.1

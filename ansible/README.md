@@ -9,12 +9,13 @@ nom d'hôte, fuseau horaire, NTP, compte admin.
 graph TD
   subgraph site_a["Site A — Lille (10.1.10.0/24)"]
     deb01["deb01\n10.1.10.x\nDebian"]
+    win02["win02 — DC racine\n10.1.10.10\nWindows Server"]
     rtr_a["rtr-a\neth1 10.1.10.1/24\neth2 192.0.2.1/24\nwg0 10.255.0.1/30"]
   end
 
   subgraph site_b["Site B — Dunkerque (10.1.20.0/24)"]
     rtr_b["rtr-b\neth1 10.1.20.1/24\neth2 192.0.2.2/24\nwg0 10.255.0.2/30"]
-    win01["win01\n10.1.20.x\nWindows Server"]
+    win01["win01 — DC Dunkerque\n10.1.20.30\nWindows Server"]
   end
 
   subgraph wan["WAN (192.0.2.0/24)"]
@@ -22,12 +23,14 @@ graph TD
   end
 
   deb01 -->|"GW 10.1.10.1"| rtr_a
-  win01 -->|"GW 10.1.20.1"| rtr_b
+  win02 -->|"10.1.0.0/16 via 10.1.10.1"| rtr_a
+  win01 -->|"10.1.0.0/16 via 10.1.20.1"| rtr_b
 
   rtr_a -. "eth0 (mgmt Ansible)\n192.168.0.40" .-> ctrl
   rtr_b -. "eth0 (mgmt Ansible)\n192.168.0.49" .-> ctrl
   deb01 -. "eth0\n192.168.0.38" .-> ctrl
   win01 -. "192.168.0.13" .-> ctrl
+  win02 -. "192.168.0.30" .-> ctrl
 
   ctrl(["Contrôleur Ansible"])
 
@@ -127,7 +130,8 @@ Le rôle ne change pas.
 | Hôte | baseline | router | wireguard | frr | ssh_hardening | ad_dc |
 |------|:--------:|:------:|:---------:|:---:|:-------------:|:-----:|
 | deb01 | ✅ | — | — | — | ✅ | — |
-| win01 | ✅ | — | — | — | — (WinRM) | ✅ |
+| win02 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ racine |
+| win01 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ réplica |
 | rtr-a | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 | rtr-b | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 
@@ -158,7 +162,7 @@ journalctl -u ssh --since today            # lire les tentatives
 
 ## Active Directory en code (MC04)
 
-Rôle `ad_dc` sur `domain_controllers` (win01), variables dans `inventory/group_vars/domain_controllers.yml` :
+Rôle `ad_dc` sur `domain_controllers` (racine : win02), variables dans `inventory/group_vars/domain_controllers.yml` :
 
 1. **Forêt** : rôle AD DS, forêt `loginord.internal` (pas de `.local`), redémarrage, puis attente
    que l'AD réponde (`Get-ADDomain` en `retries`/`until`).
@@ -166,8 +170,8 @@ Rôle `ad_dc` sur `domain_controllers` (win01), variables dans `inventory/group_
    `Départs`. Les OU de site sont générées par `ad_sites × ad_site_ous`. Groupes en AGDLP
    (`GG_*` = qui, `DL_*` = quoi), utilisateurs de test (`update_password: on_create`, `groups: set`).
 3. **DNS** : zones inverses intégrées à AD, `trackr` en A + PTR, redirecteurs.
-4. **DHCP** : rôle, autorisation dans AD (`Add-DhcpServerInDC`), étendue Dunkerque + options
-   (passerelle, DNS = IP du DC en 10.1.x, suffixe). PowerShell idempotent via `$Ansible.Changed`.
+4. **DHCP** : rôle, autorisation dans AD (`Add-DhcpServerInDC`), étendue du site + options
+   (passerelle, DNS, suffixe). PowerShell idempotent via `$Ansible.Changed`.
 
 ```sh
 ansible-playbook site.yml -l domain_controllers
@@ -180,3 +184,94 @@ nslookup 10.1.20.20
 Get-DhcpServerv4Scope
 Get-ADOrganizationalUnit -Filter * | select DistinguishedName
 ```
+
+## Sites AD et réplication (MC05)
+
+Deux DC, un par site : `win02` (Lille) crée la forêt, `win01` (Dunkerque) la rejoint.
+La racine est le premier hôte de `domain_controllers` (`ad_forest_root`), le site AD de
+chaque machine vient de son groupe de site (`ad_site` dans `group_vars/site_a.yml`, `site_b.yml`).
+
+**Geste manuel sur win01 (ISO française), avant le premier passage** : après la promotion,
+les comptes locaux disparaissent et Ansible se connecte avec l'administrateur du domaine,
+`Administrator` (forêt créée depuis une ISO anglaise). On donne ce nom au compte local pour
+que les mêmes identifiants marchent avant et après :
+
+```powershell
+Rename-LocalUser -Name Administrateur -NewName Administrator
+```
+
+Le mot de passe de cet `Administrator` local doit être `vault_win_password`, comme sur win02
+(l'`Administrator` du domaine, c'est l'ancien compte local de win02 : il a gardé ce mot de passe).
+
+Ordre des tâches (`roles/ad_dc/tasks/main.yml`), sur les deux DC en même temps :
+
+1. **Forêt** (racine).
+2. **DNS client des DC** : toutes les cartes réseau pointent vers les DNS de l'AD, jamais vers
+   un DNS Internet. Racine : `10.1.10.10`. win01 : `10.1.10.10` puis `10.1.20.30`.
+3. **Sites** (racine) : `Default-First-Site-Name` renommé en `Lille`, `Dunkerque` créé, les
+   sous-réseaux `10.1.10.0/24 → Lille` et `10.1.20.0/24 → Dunkerque`, le lien
+   `Lille-Dunkerque` (coût 100, toutes les 15 min au lieu de 180, notification de changement
+   activée : bonus). Tout est dans `ad_sites` : un 3e site = une entrée de plus.
+4. **Annuaire** (racine) : répliqué vers les autres DC, on ne l'écrit qu'à un endroit.
+5. **Promotion** de win01 (`microsoft.ad.domain_controller`, `site_name: Dunkerque`) : il naît
+   directement dans le bon site.
+6. **DNS** : zones et enregistrements sur la racine (intégrés à AD, répliqués), redirecteurs
+   sur chaque DC.
+7. **DHCP** : chaque DC sert l'étendue de son site, avec lui-même en premier DNS et l'autre
+   DC en secours. Dunkerque distribue ses adresses même tunnel coupé.
+
+**Pourquoi win01 interroge d'abord win02, puis lui-même** : avant la promotion, seul win02
+connaît le domaine. Après, si win01 se répondait d'abord à lui-même, il pourrait rester sur une
+copie de la zone qu'il n'a pas encore reçue (« îlot DNS ») ; en interrogeant d'abord le DC
+racine, il trouve toujours les enregistrements à jour. Tunnel coupé, la requête vers win02
+expire et win01 se rabat sur son propre DNS : c'est plus lent, mais ça répond. Les postes de
+Dunkerque, eux, reçoivent win01 en premier (DHCP) : ils ne dépendent jamais du tunnel.
+
+**Heure** : Kerberos refuse plus de 5 min d'écart. La racine (PDC) se synchronise sur les
+serveurs NTP, les autres DC suivent la hiérarchie du domaine (`NT5DS`). Le rôle `baseline`
+choisit d'après le rôle de la machine (`windows_domain_role`). Au passage qui suit la
+promotion, win01 passe en `NT5DS` : c'est un `changed` attendu, une seule fois.
+
+**Pare-feu** : la chaîne `forward` des routeurs (MC02) laisse passer tout le trafic entre LAN et
+`wg0`, donc DNS, Kerberos, LDAP, SMB et la plage RPC dynamique (49152-65535) passent.
+
+```sh
+ansible-playbook site.yml -l windows
+ansible-playbook site.yml -l windows       # changed=0 (après le passage NT5DS)
+ansible-playbook playbooks/verif_ad.yml    # site, dcdiag, replsummary, comptes vus par chaque DC
+```
+
+```powershell
+nltest /dsgetsite              # win01 : Dunkerque
+repadmin /replsummary          # 0 échec
+repadmin /showrepl
+repadmin /syncall /AdeP        # forcer la réplication sans attendre
+dcdiag /q                      # silence = aucune erreur
+Get-ADUser alice.martin -Server win01
+```
+
+SYSVOL est répliqué à part, par DFS-R : comparer `\\win02\SYSVOL` et `\\win01\SYSVOL`, et le
+journal « DFS Replication ».
+
+### Démo : couper le lien
+
+```sh
+ssh ansible@192.168.0.49 sudo ifdown wg0          # 1. couper le tunnel (rtr-b)
+```
+
+```powershell
+# 2. sur win01 : le DC de Dunkerque crée un compte et authentifie seul
+New-ADUser coupure.test -Server localhost -AccountPassword (Read-Host -AsSecureString) -Enabled $true
+runas /user:LOGINORD\coupure.test cmd
+Get-ADUser coupure.test -Server win02             # échoue : win02 injoignable
+```
+
+```sh
+ssh ansible@192.168.0.49 sudo ifup wg0            # 3. rétablir
+```
+
+```powershell
+# 4. sur win02 : le compte arrive (immédiat avec la notification, sinon repadmin /syncall /AdeP)
+Get-ADUser coupure.test
+```
+

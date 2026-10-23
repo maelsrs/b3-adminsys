@@ -1,6 +1,4 @@
-# DC a lille
-ansible_user: Administrator
-baseline_win_admin_group: Administrators
+# DC à Lille, racine de la forêt
 
 # net1 Proxmox (vmbr1, VLAN 10) : LAN Lille. La carte de gestion reste en DHCP.
 baseline_win_lan:

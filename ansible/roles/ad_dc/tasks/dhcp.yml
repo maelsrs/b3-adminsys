@@ -16,33 +16,35 @@
         $Ansible.Changed = $true
       }
 
-- name: Étendues DHCP et leurs options
+# Chaque DC sert l'étendue de son site : Dunkerque distribue ses adresses tunnel coupé.
+# DNS distribués : le DC du site d'abord, les autres en secours.
+- name: Étendue DHCP du site et ses options
+  vars:
+    scope: "{{ ad_sites | selectattr('name', 'equalto', ad_site) | first }}"
+    other_dcs: "{{ groups['domain_controllers'] | difference([inventory_hostname]) }}"
   ansible.windows.win_powershell:
     parameters:
-      Name: "{{ item.name }}"
-      ScopeId: "{{ item.scope_id }}"
-      Start: "{{ item.start }}"
-      End: "{{ item.end }}"
-      Mask: "{{ item.mask }}"
-      Router: "{{ item.router }}"
-      Dns: "{{ ad_dc_ip }}"
+      Name: "{{ scope.name }}"
+      ScopeId: "{{ scope.subnet | split('/') | first }}"
+      Start: "{{ scope.dhcp.start }}"
+      End: "{{ scope.dhcp.end }}"
+      Mask: "{{ scope.dhcp.mask }}"
+      Router: "{{ scope.dhcp.router }}"
+      Dns: "{{ [ad_dc_ip] + other_dcs | map('extract', hostvars, ['baseline_win_lan', 'address']) | list }}"
       Domain: "{{ ad_domain }}"
     script: |
-      param($Name, $ScopeId, $Start, $End, $Mask, $Router, $Dns, $Domain)
+      param($Name, $ScopeId, $Start, $End, $Mask, $Router, [string[]]$Dns, $Domain)
       $Ansible.Changed = $false
       if (-not (Get-DhcpServerv4Scope | Where-Object { $_.ScopeId.IPAddressToString -eq $ScopeId })) {
         Add-DhcpServerv4Scope -Name $Name -StartRange $Start -EndRange $End -SubnetMask $Mask -State Active
         $Ansible.Changed = $true
       }
       # 3 = passerelle, 6 = DNS, 15 = suffixe DNS
-      $options = @{ 3 = $Router; 6 = $Dns; 15 = $Domain }
+      $options = @{ 3 = @($Router); 6 = $Dns; 15 = @($Domain) }
       foreach ($id in $options.Keys) {
         $current = (Get-DhcpServerv4OptionValue -ScopeId $ScopeId -OptionId $id -ErrorAction SilentlyContinue).Value
-        if ((@($current) -join ',') -ne $options[$id]) {
+        if ((@($current) -join ',') -ne ($options[$id] -join ',')) {
           Set-DhcpServerv4OptionValue -ScopeId $ScopeId -OptionId $id -Value $options[$id]
           $Ansible.Changed = $true
         }
       }
-  loop: "{{ ad_dhcp_scopes }}"
-  loop_control:
-    label: "{{ item.name }}"

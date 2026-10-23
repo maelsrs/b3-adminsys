@@ -1,1 +1,3 @@
 site_name: site_b
+# Site AD des machines de ce site (doit exister dans ad_sites)
+ad_site: Dunkerque

@@ -1,0 +1,77 @@
+# Même schéma partout : tester l'existence, créer si absent, renseigner $Ansible.Changed
+- name: Sites AD (le premier reprend Default-First-Site-Name)
+  ansible.windows.win_powershell:
+    parameters:
+      Name: "{{ item.name }}"
+    script: |
+      param($Name)
+      $Ansible.Changed = $false
+      if (-not (Get-ADReplicationSite -Filter "Name -eq '$Name'")) {
+        $default = Get-ADReplicationSite -Filter "Name -eq 'Default-First-Site-Name'"
+        if ($default) {
+          Rename-ADObject -Identity $default.DistinguishedName -NewName $Name
+        } else {
+          New-ADReplicationSite -Name $Name
+        }
+        $Ansible.Changed = $true
+      }
+  loop: "{{ ad_sites }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Sous-réseaux rattachés à leur site
+  ansible.windows.win_powershell:
+    parameters:
+      Subnet: "{{ item.subnet }}"
+      Site: "{{ item.name }}"
+    script: |
+      param($Subnet, $Site)
+      $Ansible.Changed = $false
+      $current = Get-ADReplicationSubnet -Filter "Name -eq '$Subnet'"
+      if (-not $current) {
+        New-ADReplicationSubnet -Name $Subnet -Site $Site
+        $Ansible.Changed = $true
+      } elseif ($current.Site -notlike "CN=$Site,*") {
+        Set-ADReplicationSubnet -Identity $Subnet -Site $Site
+        $Ansible.Changed = $true
+      }
+  loop: "{{ ad_sites }}"
+  loop_control:
+    label: "{{ item.subnet }} → {{ item.name }}"
+
+- name: Lien de site (coût, fréquence, notification)
+  ansible.windows.win_powershell:
+    parameters:
+      Name: "{{ ad_site_link.name }}"
+      Sites: "{{ ad_sites | map(attribute='name') | list }}"
+      Cost: "{{ ad_site_link.cost }}"
+      Frequency: "{{ ad_site_link.frequency }}"
+      Notification: "{{ ad_site_link.notification | default(false) }}"
+    script: |
+      param($Name, [string[]]$Sites, [int]$Cost, [int]$Frequency, [bool]$Notification)
+      $Ansible.Changed = $false
+      $link = Get-ADReplicationSiteLink -Filter "Name -eq '$Name'" -Properties Options
+      if (-not $link) {
+        New-ADReplicationSiteLink -Name $Name -SitesIncluded $Sites -Cost $Cost `
+          -ReplicationFrequencyInMinutes $Frequency -InterSiteTransportProtocol IP
+        $link = Get-ADReplicationSiteLink -Identity $Name -Properties Options
+        $Ansible.Changed = $true
+      }
+      if ($link.Cost -ne $Cost -or $link.ReplicationFrequencyInMinutes -ne $Frequency) {
+        Set-ADReplicationSiteLink -Identity $Name -Cost $Cost -ReplicationFrequencyInMinutes $Frequency
+        $Ansible.Changed = $true
+      }
+      # SitesIncluded contient des DN : CN=Lille,CN=Sites,…
+      $current = $link.SitesIncluded | ForEach-Object { ($_ -split ',')[0] -replace '^CN=' }
+      $missing = $Sites | Where-Object { $_ -notin $current }
+      if ($missing) {
+        Set-ADReplicationSiteLink -Identity $Name -SitesIncluded @{ Add = $missing }
+        $Ansible.Changed = $true
+      }
+      # Bit 1 de l'attribut options : USE_NOTIFY
+      $options = [int]$link.Options
+      $wanted = if ($Notification) { $options -bor 1 } else { $options -band -bnot 1 }
+      if ($wanted -ne $options) {
+        Set-ADReplicationSiteLink -Identity $Name -Replace @{ options = $wanted }
+        $Ansible.Changed = $true
+      }
