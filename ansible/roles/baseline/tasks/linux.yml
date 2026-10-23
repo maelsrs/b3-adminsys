@@ -11,6 +11,20 @@
     regexp: '^127\.0\.1\.1\s'
     line: "127.0.1.1 {{ inventory_hostname }}"
 
+# Carte LAN en IP fixe (Debian). Pas de passerelle par défaut : Internet et Ansible passent
+# par la carte de gestion, les sites par une route 10.1.0.0/16, comme sur les Windows.
+- name: IP fixe sur le LAN
+  ansible.builtin.template:
+    src: interfaces-lan.j2
+    dest: /etc/network/interfaces.d/lan
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Relancer la carte LAN
+  when:
+    - baseline_linux_lan is defined
+    - ansible_facts['os_family'] == 'Debian'
+
 - name: Installer chrony
   ansible.builtin.apt:
     name: chrony

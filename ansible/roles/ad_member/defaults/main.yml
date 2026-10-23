@@ -1,0 +1,4 @@
+# L'objet ordinateur atterrit dans l'OU Serveurs de son site, pas dans CN=Computers
+ad_member_computer_ou: "OU=Serveurs,OU={{ ad_site }},OU={{ ad_ou_root }},{{ ad_base }}"
+ad_member_login_groups: []
+ad_member_sudo_groups: []

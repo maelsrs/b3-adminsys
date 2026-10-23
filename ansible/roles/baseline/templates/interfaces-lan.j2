@@ -1,0 +1,5 @@
+# {{ ansible_managed }}
+auto {{ baseline_linux_lan.iface }}
+iface {{ baseline_linux_lan.iface }} inet static
+    address {{ baseline_linux_lan.address }}/{{ baseline_linux_lan.prefix }}
+    up ip route replace 10.1.0.0/16 via {{ baseline_linux_lan.gateway }}

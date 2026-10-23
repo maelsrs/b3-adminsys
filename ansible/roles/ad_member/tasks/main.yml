@@ -1,0 +1,97 @@
+# Prérequis : l'heure (chrony sur les DC, rôle baseline) et le DNS. Sans le DNS de l'AD, ni
+# realm discover ni Kerberos ne trouvent les DC (enregistrements SRV).
+- name: Empêcher dhclient de réécrire resolv.conf
+  ansible.builtin.copy:
+    content: |
+      # Géré par Ansible : resolv.conf pointe vers les DC, la carte de gestion n'y touche plus
+      make_resolv_conf() { :; }
+    dest: /etc/dhcp/dhclient-enter-hooks.d/ad-dns
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: DNS de l'AD
+  ansible.builtin.template:
+    src: resolv.conf.j2
+    dest: /etc/resolv.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+# bind9-dnsutils : nsupdate (SSSD inscrit la machine dans le DNS) et dig pour diagnostiquer
+- name: realmd, SSSD, Kerberos
+  ansible.builtin.apt:
+    name:
+      - realmd
+      - sssd
+      - sssd-tools
+      - adcli
+      - krb5-user
+      - libnss-sss
+      - libpam-sss
+      - packagekit
+      - bind9-dnsutils
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Kerberos (kinit, klist)
+  ansible.builtin.template:
+    src: krb5.conf.j2
+    dest: /etc/krb5.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Domaines déjà joints
+  ansible.builtin.command: realm list --name-only
+  register: ad_member_realms
+  changed_when: false
+
+# Le mot de passe passe par l'entrée standard, jamais dans la ligne de commande
+- name: Joindre le domaine
+  ansible.builtin.command:
+    argv:
+      - realm
+      - join
+      - --user={{ ad_admin_user }}
+      - --computer-ou={{ ad_member_computer_ou }}
+      - "{{ ad_domain }}"
+    stdin: "{{ ad_admin_password }}"
+  when: ad_domain not in ad_member_realms.stdout_lines
+  no_log: true
+
+- name: Configuration SSSD
+  ansible.builtin.template:
+    src: sssd.conf.j2
+    dest: /etc/sssd/sssd.conf
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Redémarrer SSSD
+
+- name: SSSD démarré
+  ansible.builtin.service:
+    name: sssd
+    state: started
+    enabled: true
+
+- name: Répertoire personnel déjà créé à la connexion ?
+  ansible.builtin.command: grep -q pam_mkhomedir /etc/pam.d/common-session
+  register: ad_member_mkhomedir
+  changed_when: false
+  failed_when: false
+
+- name: Créer le répertoire personnel à la première connexion
+  ansible.builtin.command: pam-auth-update --enable mkhomedir
+  when: ad_member_mkhomedir.rc != 0
+
+# Un sudoers cassé et plus personne ne fait sudo : visudo valide avant de remplacer
+- name: sudo pour les groupes AD
+  ansible.builtin.template:
+    src: sudoers-ad.j2
+    dest: /etc/sudoers.d/ad-admins
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s

@@ -1,0 +1,20 @@
+# IP des DC, ceux du site de la machine d'abord : DNS et NTP des membres
+ad_member_dcs: >-
+  {{ (groups['domain_controllers'] | map('extract', hostvars) | selectattr('ad_site', 'eq', ad_site)
+      | map(attribute='baseline_win_lan.address') | list)
+   + (groups['domain_controllers'] | map('extract', hostvars) | rejectattr('ad_site', 'eq', ad_site)
+      | map(attribute='baseline_win_lan.address') | list) }}
+
+# Kerberos refuse plus de 5 min d'écart : l'heure vient des DC, pas d'Internet
+baseline_ntp_servers: "{{ ad_member_dcs }}"
+# W32Time annonce une incertitude (root dispersion) de quelques secondes, même toutes les 64 s
+# (baseline_win_ntp_max_poll) : au-delà de 3 s, chrony écarte la source. L'écart réel mesuré
+# reste de quelques ms, très loin des 5 min de Kerberos. Au-delà de 16 s, la RFC 5905 rejette.
+baseline_chrony_maxdistance: 16
+
+# Qui entre (SSSD), qui a sudo. Les autres comptes AD sont refusés.
+ad_member_login_groups: [GG_Admins_Linux, GG_Developpeurs]
+ad_member_sudo_groups: [GG_Admins_Linux]
+
+# SSH (MC03) : ces groupes AD entrent avec leur mot de passe AD, les comptes locaux restent à clé
+ssh_hardening_ad_groups: "{{ ad_member_login_groups }}"
