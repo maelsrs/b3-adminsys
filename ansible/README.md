@@ -9,6 +9,7 @@ nom d'hôte, fuseau horaire, NTP, compte admin.
 graph TD
   subgraph site_a["Site A — Lille (10.1.10.0/24)"]
     deb01["deb01 — membre AD\n10.1.10.20\nDebian"]
+    ldap01["ldap01 — OpenLDAP prestataires\n10.1.10.21\nDebian"]
     win02["win02 — DC racine\n10.1.10.10\nWindows Server"]
     rtr_a["rtr-a\neth1 10.1.10.1/24\neth2 192.0.2.1/24\nwg0 10.255.0.1/30"]
   end
@@ -23,12 +24,14 @@ graph TD
   end
 
   deb01 -->|"10.1.0.0/16 via 10.1.10.1"| rtr_a
+  ldap01 -->|"10.1.0.0/16 via 10.1.10.1"| rtr_a
   win02 -->|"GW 10.1.10.1"| rtr_a
   win01 -->|"GW 10.1.20.1"| rtr_b
 
   rtr_a -. "eth0 (mgmt Ansible)\n192.168.0.40" .-> ctrl
   rtr_b -. "eth0 (mgmt Ansible)\n192.168.0.49" .-> ctrl
   deb01 -. "eth0\n192.168.0.38" .-> ctrl
+  ldap01 -. "eth0\n192.168.0.12" .-> ctrl
   rtr_a -. "OpenVPN (10.1.10.23)\npousse 10.1.0.0/16\nWinRM vers les DC" .-> ctrl
 
   ctrl(["Contrôleur Ansible"])
@@ -126,13 +129,14 @@ Le rôle ne change pas.
 
 ## Rôles par hôte
 
-| Hôte | baseline | router | wireguard | frr | ssh_hardening | ad_dc | ad_member |
-|------|:--------:|:------:|:---------:|:---:|:-------------:|:-----:|:---------:|
-| deb01 | ✅ | — | — | — | ✅ | — | ✅ |
-| win02 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ racine | — |
-| win01 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ réplica | — |
-| rtr-a | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
-| rtr-b | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
+| Hôte | baseline | router | wireguard | frr | ssh_hardening | ad_dc | ad_member | openldap |
+|------|:--------:|:------:|:---------:|:---:|:-------------:|:-----:|:---------:|:--------:|
+| deb01 | ✅ | — | — | — | ✅ | — | ✅ | — |
+| ldap01 | ✅ | — | — | — | ✅ | — | — | ✅ |
+| win02 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ racine | — | — |
+| win01 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ réplica | — | — |
+| rtr-a | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| rtr-b | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
 
 > 🔲 = à créer · ✅ = en place
 
@@ -414,4 +418,87 @@ ssh alice.martin@10.1.10.20     # refusé
 ```sh
 # sur deb01 : retrouver le refus
 journalctl -u ssh --since -5min | grep alice   # « not allowed because none of user's groups are listed in AllowGroups »
+```
+
+## LDAP : interroger AD, OpenLDAP pour les prestataires (MC07)
+
+**Qui va dans quel annuaire** (choix d'architecture) :
+
+| | Active Directory | OpenLDAP (ldap01) |
+|---|---|---|
+| Qui | les salariés | les prestataires externes |
+| Pour quoi | Windows, Debian, partages | TrackR et web01, rien d'autre |
+| Durée de vie | le contrat de travail | la mission : 3 mois renouvelables |
+
+Un prestataire n'a jamais de compte dans AD : il ne peut ni ouvrir une session Windows, ni
+entrer sur une Debian du domaine, ni voir l'annuaire des salariés. Même suffixe
+(`dc=loginord,dc=internal`), mais deux serveurs distincts.
+
+**ldap01** : VM 119, clone lié de `template-debian` (le disque ne stocke que ce qui diffère du
+modèle). Après un clonage, régénérer `machine-id` et clés SSH, sinon la VM est le sosie de
+l'original :
+
+```sh
+rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup
+rm /etc/ssh/ssh_host_* && dpkg-reconfigure openssh-server
+```
+
+### Interroger AD depuis Linux
+
+```sh
+# bind simple en clair : refusé par les DC
+ldapsearch -x -H ldap://win02.loginord.internal -D test2.test2@loginord.internal -W -b DC=loginord,DC=internal ...
+# → Strong(er) authentication required : signature LDAP exigée hors TLS
+
+# Kerberos : le ticket de la session (MC06), aucun mot de passe, échanges chiffrés (SASL SSF 256)
+ldapsearch -LLL -Y GSSAPI -H ldap://win02.loginord.internal -b DC=loginord,DC=internal \
+  '(&(objectClass=user)(memberOf=CN=GG_Compta,OU=Groupes,OU=LogiNord,DC=loginord,DC=internal))' sAMAccountName
+```
+
+`ldap-utils` et `libsasl2-modules-gssapi-mit` sont posés par `ad_member`, avec `SASL_NOCANON on`
+dans `/etc/ldap/ldap.conf` : sinon libldap remplace le nom du DC par sa résolution inverse et
+demande un ticket pour le mauvais nom.
+
+### OpenLDAP (rôle `openldap`)
+
+Variables dans `inventory/group_vars/ldap_servers.yml`, mot de passe admin `vault_ldap`.
+
+1. **debconf avant apt** : domaine, organisation, mot de passe admin. Sinon slapd s'installe
+   avec un domaine tiré du nom d'hôte. Les mots de passe debconf ne se relisent pas (toujours
+   `changed`) : posés seulement si slapd n'est pas encore installé.
+2. **TLS** : certificat autosigné (CN et SAN `ldap01.loginord.internal`), clé `root:openldap
+   0640` (illisible : slapd refuse de démarrer sans message clair), déclaré dans `cn=config`.
+   Écoute aussi en `ldaps://` (bonus).
+3. **Chiffrement obligatoire** : `olcSecurity: ssf=71`. 71 = `ldapi:///` (socket local,
+   Ansible) ; TLS va bien au-delà ; le port 389 en clair (0) est refusé, même pour lire.
+4. **memberOf** (bonus) : chaque compte porte le lien inverse vers ses groupes. Posé avant les
+   groupes, il ne calcule que les appartenances écrites après lui.
+5. **Entrées** : `ou=prestataires`, `uid=jdupont` (`inetOrgPerson`), `cn=presta-trackr`
+   (`groupOfNames`, au moins un membre obligatoire). `ldap_entry` crée, `ldap_attrs` aligne,
+   `ldap_passwd` pose le mot de passe initial (`vault_pwd_init`).
+6. **Confiance** : le certificat rejoint le magasin système de deb01 et ldap01
+   (`update-ca-certificates`), que `/etc/ldap/ldap.conf` lit déjà (`TLS_CACERT`).
+
+**Points à expliquer à l'oral** :
+
+- **`cn=config`** : la configuration vit dans l'annuaire, et se modifie à chaud par LDAP
+  (`ldapmodify`, `ldap_attrs`). `slapd.conf` est obsolète. Ansible y entre par `ldapi:///` en
+  SASL EXTERNAL : root sur la machine = administrateur de la configuration.
+- **`-ZZ`** : StartTLS obligatoire, la commande échoue si le chiffrement ne s'établit pas (ou si
+  le certificat n'est pas reconnu). `-Z` seul retomberait en clair sans prévenir.
+- **Limite connue** : l'ACL par défaut de Debian laisse la lecture anonyme (hors mots de passe).
+  À durcir quand TrackR s'y authentifiera avec un compte de service.
+
+```sh
+ansible-playbook site.yml -l ldap01
+ansible-playbook site.yml -l ldap01         # changed=0
+ansible-playbook playbooks/verif_ldap.yml   # AD en GSSAPI, OpenLDAP en -ZZ, refus en clair
+```
+
+```sh
+ldapsearch -x -ZZ -H ldap://ldap01.loginord.internal -b ou=prestataires,dc=loginord,dc=internal
+ldapsearch -x -H ldaps://ldap01.loginord.internal -b ou=prestataires,dc=loginord,dc=internal
+ldapsearch -x -H ldap://ldap01.loginord.internal -b ...      # Confidentiality required (13)
+ldapwhoami -x -ZZ -H ldap://ldap01.loginord.internal -D uid=jdupont,ou=prestataires,dc=loginord,dc=internal -W
+sudo ldapsearch -Q -Y EXTERNAL -H ldapi:/// -b cn=config olcSecurity olcTLSCertificateFile
 ```

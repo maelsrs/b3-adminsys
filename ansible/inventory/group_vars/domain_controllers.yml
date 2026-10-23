@@ -80,4 +80,7 @@ ad_dns_reverse_zones:
 ad_dns_records:
   - name: trackr
     ip: 10.1.20.20
+  # Hors domaine : ne s'inscrit pas seul comme deb01 (SSSD)
+  - name: ldap01
+    ip: 10.1.10.21
 ad_dns_forwarders: [1.1.1.1, 9.9.9.9]

@@ -1,0 +1,10 @@
+openldap_domain: example.internal
+openldap_organization: Example
+# dc=loginord,dc=internal pour loginord.internal
+openldap_base: "dc={{ openldap_domain.split('.') | join(',dc=') }}"
+openldap_admin_dn: "cn=admin,{{ openldap_base }}"
+openldap_fqdn: "{{ inventory_hostname }}.{{ openldap_domain }}"
+openldap_tls_dir: /etc/ldap/tls
+openldap_prestataires: []
+openldap_groups: []
+openldap_clients: []

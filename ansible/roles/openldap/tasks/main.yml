@@ -1,0 +1,203 @@
+# debconf avant apt, sinon slapd s'installe avec un domaine tiré du nom d'hôte. Les mots de
+# passe debconf ne se relisent pas (toujours « changed ») : on ne les pose qu'avant l'installation.
+- name: slapd déjà installé ?
+  ansible.builtin.command: dpkg-query -W -f=${Status} slapd
+  register: openldap_installed
+  changed_when: false
+  failed_when: false
+
+- name: Réponses à l'installation de slapd
+  ansible.builtin.debconf:
+    name: slapd
+    question: "{{ item.q }}"
+    value: "{{ item.v }}"
+    vtype: "{{ item.t }}"
+  loop:
+    - {q: slapd/domain, v: "{{ openldap_domain }}", t: string}
+    - {q: shared/organization, v: "{{ openldap_organization }}", t: string}
+    - {q: slapd/password1, v: "{{ openldap_admin_password }}", t: password}
+    - {q: slapd/password2, v: "{{ openldap_admin_password }}", t: password}
+  when: "'install ok installed' not in openldap_installed.stdout"
+  no_log: true
+
+# python3-ldap : les modules LDAP d'Ansible en ont besoin sur la machine
+- name: slapd, outils LDAP
+  ansible.builtin.apt:
+    name: [slapd, ldap-utils, python3-ldap]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# Certificat autosigné. La clé doit être lisible par slapd (groupe openldap), sinon il refuse
+# de démarrer sans message clair.
+- name: Dossier TLS
+  ansible.builtin.file:
+    path: "{{ openldap_tls_dir }}"
+    state: directory
+    owner: root
+    group: openldap
+    mode: "0750"
+
+- name: Certificat autosigné
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -newkey
+      - rsa:3072
+      - -nodes
+      - -days
+      - "3650"
+      - -subj
+      - /CN={{ openldap_fqdn }}
+      - -addext
+      - subjectAltName=DNS:{{ openldap_fqdn }},DNS:{{ inventory_hostname }}
+      - -keyout
+      - "{{ openldap_tls_dir }}/{{ inventory_hostname }}.key"
+      - -out
+      - "{{ openldap_tls_dir }}/{{ inventory_hostname }}.crt"
+    creates: "{{ openldap_tls_dir }}/{{ inventory_hostname }}.crt"
+
+- name: Clé privée lisible par slapd seulement
+  ansible.builtin.file:
+    path: "{{ openldap_tls_dir }}/{{ inventory_hostname }}.key"
+    owner: root
+    group: openldap
+    mode: "0640"
+
+# cn=config : la configuration vit dans l'annuaire. Sans bind_dn, les modules passent par
+# ldapi:/// en SASL EXTERNAL : root sur la machine = administrateur de cn=config.
+- name: TLS dans cn=config
+  community.general.ldap_attrs:
+    dn: cn=config
+    attributes:
+      olcTLSCertificateFile: "{{ openldap_tls_dir }}/{{ inventory_hostname }}.crt"
+      olcTLSCertificateKeyFile: "{{ openldap_tls_dir }}/{{ inventory_hostname }}.key"
+      olcTLSCACertificateFile: "{{ openldap_tls_dir }}/{{ inventory_hostname }}.crt"
+    state: exact
+
+# Rien en clair sur le réseau : force 71 = ldapi:/// (local), TLS va bien au-delà, le port 389
+# sans StartTLS (force 0) est refusé
+- name: Chiffrement obligatoire
+  community.general.ldap_attrs:
+    dn: cn=config
+    attributes:
+      olcSecurity: ssf=71
+    state: exact
+
+- name: Écouter aussi en ldaps:// (port 636)
+  ansible.builtin.lineinfile:
+    path: /etc/default/slapd
+    regexp: ^SLAPD_SERVICES=
+    line: SLAPD_SERVICES="ldap:/// ldapi:/// ldaps:///"
+  notify: Redémarrer slapd
+
+# Bonus : memberOf ajoute sur chaque compte le lien inverse vers ses groupes. Avant les
+# groupes : il ne calcule que les appartenances écrites après lui.
+- name: Module memberOf
+  community.general.ldap_attrs:
+    dn: cn=module{0},cn=config
+    attributes:
+      olcModuleLoad: memberof
+    state: present
+
+- name: Overlay memberOf sur la base
+  community.general.ldap_entry:
+    dn: olcOverlay=memberof,olcDatabase={1}mdb,cn=config
+    objectClass: [olcOverlayConfig, olcMemberOf]
+    attributes:
+      olcOverlay: memberof
+      olcMemberOfRefInt: "TRUE"
+
+- name: Entrées de l'annuaire
+  module_defaults:
+    community.general.ldap_entry: &openldap_bind
+      bind_dn: "{{ openldap_admin_dn }}"
+      bind_pw: "{{ openldap_admin_password }}"
+    community.general.ldap_attrs: *openldap_bind
+    community.general.ldap_passwd: *openldap_bind
+  block:
+    - name: OU prestataires
+      community.general.ldap_entry:
+        dn: "ou=prestataires,{{ openldap_base }}"
+        objectClass: [organizationalUnit]
+
+    # ldap_entry crée l'entrée si elle manque, ldap_attrs aligne ses attributs ensuite
+    - name: Comptes prestataires
+      community.general.ldap_entry:
+        dn: "uid={{ item.uid }},ou=prestataires,{{ openldap_base }}"
+        objectClass: [inetOrgPerson]
+        attributes:
+          cn: "{{ item.cn }}"
+          sn: "{{ item.sn }}"
+      loop: "{{ openldap_prestataires }}"
+      loop_control:
+        label: "{{ item.uid }}"
+
+    - name: Attributs des prestataires
+      community.general.ldap_attrs:
+        dn: "uid={{ item.uid }},ou=prestataires,{{ openldap_base }}"
+        attributes:
+          cn: "{{ item.cn }}"
+          sn: "{{ item.sn }}"
+          mail: "{{ item.mail }}"
+        state: exact
+      loop: "{{ openldap_prestataires }}"
+      loop_control:
+        label: "{{ item.uid }}"
+
+    - name: Mot de passe initial des prestataires
+      community.general.ldap_passwd:
+        dn: "uid={{ item.uid }},ou=prestataires,{{ openldap_base }}"
+        passwd: "{{ vault_pwd_init }}"
+      loop: "{{ openldap_prestataires }}"
+      loop_control:
+        label: "{{ item.uid }}"
+      no_log: true
+
+    # groupOfNames exige au moins un membre
+    - name: Groupes
+      community.general.ldap_entry:
+        dn: "cn={{ item.cn }},ou=prestataires,{{ openldap_base }}"
+        objectClass: [groupOfNames]
+        attributes:
+          member: "{{ item.members | map('regex_replace', '^(.*)$', 'uid=\\1,ou=prestataires,' ~ openldap_base) | list }}"
+      loop: "{{ openldap_groups }}"
+      loop_control:
+        label: "{{ item.cn }}"
+
+    - name: Membres des groupes
+      community.general.ldap_attrs:
+        dn: "cn={{ item.cn }},ou=prestataires,{{ openldap_base }}"
+        attributes:
+          member: "{{ item.members | map('regex_replace', '^(.*)$', 'uid=\\1,ou=prestataires,' ~ openldap_base) | list }}"
+        state: exact
+      loop: "{{ openldap_groups }}"
+      loop_control:
+        label: "{{ item.cn }}"
+
+# Les clients font confiance au certificat : il rejoint le magasin système, que lit
+# /etc/ldap/ldap.conf (TLS_CACERT) sur Debian
+- name: Lire le certificat
+  ansible.builtin.slurp:
+    src: "{{ openldap_tls_dir }}/{{ inventory_hostname }}.crt"
+  register: openldap_cert
+
+- name: Déposer le certificat chez les clients
+  ansible.builtin.copy:
+    content: "{{ openldap_cert.content | b64decode }}"
+    dest: /usr/local/share/ca-certificates/{{ inventory_hostname }}.crt
+    owner: root
+    group: root
+    mode: "0644"
+  delegate_to: "{{ item }}"
+  loop: "{{ openldap_clients }}"
+  register: openldap_trust
+
+- name: Mettre à jour le magasin de certificats des clients
+  ansible.builtin.command: update-ca-certificates
+  delegate_to: "{{ item.item }}"
+  loop: "{{ openldap_trust.results | selectattr('changed') | list }}"
+  loop_control:
+    label: "{{ item.item }}"

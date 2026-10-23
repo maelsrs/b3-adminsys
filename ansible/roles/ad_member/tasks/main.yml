@@ -31,6 +31,9 @@
       - libpam-sss
       - packagekit
       - bind9-dnsutils
+      # MC07 : ldapsearch, et Kerberos (GSSAPI) pour interroger AD sans mot de passe
+      - ldap-utils
+      - libsasl2-modules-gssapi-mit
     state: present
     update_cache: true
     cache_valid_time: 3600
@@ -42,6 +45,14 @@
     owner: root
     group: root
     mode: "0644"
+
+# GSSAPI : ldapsearch vise le DC par son nom ; sans ça, libldap le remplace par le résultat
+# d'une résolution inverse, et le ticket Kerberos demandé ne correspond plus
+- name: ldapsearch -Y GSSAPI garde le nom du serveur
+  ansible.builtin.lineinfile:
+    path: /etc/ldap/ldap.conf
+    regexp: ^SASL_NOCANON
+    line: SASL_NOCANON on
 
 - name: Domaines déjà joints
   ansible.builtin.command: realm list --name-only
