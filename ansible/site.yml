@@ -36,3 +36,11 @@
     - vault/secrets.yml
   roles:
     - ad_member
+
+# Après les DC (enregistrement DNS ldap01) et les membres (clients du certificat)
+- name: Annuaire OpenLDAP des prestataires
+  hosts: ldap_servers
+  vars_files:
+    - vault/secrets.yml
+  roles:
+    - openldap

@@ -1,0 +1,18 @@
+# Même suffixe que l'AD (dc=loginord,dc=internal), mais un autre serveur : deux annuaires
+# distincts. Salariés dans AD, prestataires ici (README, MC07).
+openldap_domain: loginord.internal
+openldap_organization: LogiNord
+openldap_admin_password: "{{ vault_ldap }}"
+
+# Prestataires : la mission dure 3 mois renouvelables, l'accès se limite à TrackR et web01
+openldap_prestataires:
+  - uid: jdupont
+    cn: Jean Dupont
+    sn: Dupont
+    mail: jean.dupont@presta-trackr.example
+openldap_groups:
+  - cn: presta-trackr
+    members: [jdupont]
+
+# Les machines qui doivent faire confiance au certificat autosigné
+openldap_clients: "{{ groups['ad_members'] + groups['ldap_servers'] }}"

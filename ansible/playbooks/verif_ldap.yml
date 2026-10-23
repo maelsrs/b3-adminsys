@@ -1,0 +1,42 @@
+# Vérifications MC07, en lecture seule : ansible-playbook playbooks/verif_ldap.yml
+- name: Les deux annuaires, vus d'une Debian du domaine
+  hosts: ad_members
+  gather_facts: false
+  vars:
+    ad_group: "CN=GG_Admins_Linux,OU=Groupes,OU={{ ad_ou_root }},{{ ad_base }}"
+    ldap_host: "{{ groups['ldap_servers'] | first }}"
+    ldap_uri: "ldap://{{ ldap_host }}.{{ hostvars[ldap_host].openldap_domain }}"
+    ldap_base: "ou=prestataires,dc={{ hostvars[ldap_host].openldap_domain.split('.') | join(',dc=') }}"
+  tasks:
+    # Ticket du compte machine (keytab de la jonction) : aucun mot de passe à fournir
+    - name: AD en Kerberos (GSSAPI) — membres d'un groupe
+      ansible.builtin.shell: >
+        kinit -k '{{ inventory_hostname | upper }}$@{{ ad_domain | upper }}' &&
+        ldapsearch -LLL -Q -Y GSSAPI -H ldap://{{ ad_forest_root_name }}.{{ ad_domain }} -b '{{ ad_base }}'
+        '(&(objectClass=user)(memberOf={{ ad_group }}))' sAMAccountName | grep '^sAMAccountName';
+        kdestroy
+      environment:
+        KRB5CCNAME: /tmp/krb5cc_verif_ldap
+      vars:
+        ad_forest_root_name: "{{ groups['domain_controllers'] | first }}"
+      register: verif_ad
+      changed_when: false
+
+    - name: OpenLDAP en StartTLS obligatoire (-ZZ)
+      ansible.builtin.command: >
+        ldapsearch -LLL -x -ZZ -H {{ ldap_uri }} -b {{ ldap_base }} (objectClass=*) dn memberOf
+      register: verif_tls
+      changed_when: false
+
+    - name: OpenLDAP en clair (doit être refusé)
+      ansible.builtin.command: ldapsearch -LLL -x -H {{ ldap_uri }} -b {{ ldap_base }} (objectClass=*) dn
+      register: verif_clair
+      changed_when: false
+      failed_when: verif_clair.rc == 0
+
+    - name: Résultat
+      ansible.builtin.debug:
+        msg:
+          ad_gssapi: "{{ verif_ad.stdout_lines }}"
+          openldap_tls: "{{ verif_tls.stdout_lines }}"
+          openldap_clair: "{{ verif_clair.stderr_lines | first }}"
