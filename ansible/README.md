@@ -556,6 +556,18 @@ la réappliquent pour rien.
 | T: | Direction | GG_Direction | DL_Partage_Direction_RW |
 | U: | Adminsys | GG_Adminsys | DL_Partage_Adminsys_RW |
 
+**Bonus** :
+
+- **PSO** (`ad_pso`) : `PSO-Admins` (16 caractères, historique 24, verrouillage après 3 échecs
+  pendant 30 min) appliquée à `GG_Admins_Domaine`. Les comptes d'administration sont séparés des
+  comptes de tous les jours : `adm-test2` (OU `Admins`) à côté de `test2.test2`. Seule exception
+  possible à « une politique par domaine » ; à plusieurs PSO, la plus petite `Precedence` gagne.
+  Vérifier : `Get-ADUserResultantPasswordPolicy adm-test2` (PSO-Admins), `test2.test2` (aucune :
+  politique du domaine).
+- **`redircmp`** : les ordinateurs joints sans OU précise arrivent dans `OU=Nouveaux` au lieu de
+  `CN=Computers`, et y reçoivent déjà `SRV - Pare-feu` (`extra_links`). Vérifier :
+  `(Get-ADDomain).ComputersContainer`.
+
 **Points à expliquer à l'oral** :
 
 - **Le conteneur `Computers` n'est pas une OU** : impossible d'y lier une GPO. Une machine jointe
@@ -569,7 +581,7 @@ la réappliquent pour rien.
 
 ```sh
 ansible-playbook playbooks/gpo_lecteurs.yml        # (re)fabrique la sauvegarde, à committer
-ansible-playbook site.yml -l win02 --tags gpo      # politique, GPO, imports, liens (~30 s)
+ansible-playbook site.yml -l win02 --tags annuaire,gpo  # comptes, politique, PSO, redircmp, GPO
 ansible-playbook site.yml -l win02 --tags gpo      # changed=0
 ansible-playbook site.yml -l srv01                 # jonction, partages
 ansible-playbook playbooks/verif_gpo.yml           # GPO et liens, gpresult sur srv01

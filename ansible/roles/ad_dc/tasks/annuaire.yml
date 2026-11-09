@@ -36,7 +36,8 @@
     upn: "{{ item.name }}@{{ ad_domain }}"
     firstname: "{{ item.firstname }}"
     surname: "{{ item.surname }}"
-    path: "OU=Utilisateurs,OU={{ item.site }},OU={{ ad_ou_root }},{{ ad_base }}"
+    # `ou` pour les comptes hors site (adm-xxx dans OU=Admins)
+    path: "{{ item.ou if item.ou is defined else 'OU=Utilisateurs,OU=' ~ item.site }},OU={{ ad_ou_root }},{{ ad_base }}"
     password: "{{ vault_pwd_init }}"
     update_password: on_create
     # Domain Users est le groupe principal : AD refuse de le retirer, set doit l'inclure

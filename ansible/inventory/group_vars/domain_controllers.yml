@@ -26,7 +26,8 @@ ad_site_link:
   notification: true
 
 # Arborescence : OU racine, OU transverses, puis sites × services
-ad_ous: [Groupes, Admins, Départs]
+# Nouveaux : là où atterrissent les ordinateurs joints sans OU précise (redircmp, MC08)
+ad_ous: [Groupes, Admins, Départs, Nouveaux]
 ad_site_ous: [Utilisateurs, Serveurs]
 
 ad_groups:
@@ -40,6 +41,9 @@ ad_groups:
   - name: GG_Admins_Linux
     scope: global
   - name: GG_Developpeurs
+    scope: global
+  # MC08 : les comptes d'administration adm-xxx, soumis à la PSO
+  - name: GG_Admins_Domaine
     scope: global
   - name: DL_Partage_Adminsys_RW
     scope: domainlocal
@@ -72,6 +76,12 @@ ad_users:
     surname: Leroy
     site: Dunkerque
     groups: [GG_Developpeurs]
+  # Compte d'administration séparé du compte de tous les jours (test2.test2), dans OU=Admins
+  - name: adm-test2
+    firstname: Test2
+    surname: Test2 (admin)
+    ou: OU=Admins
+    groups: [GG_Admins_Domaine]
 
 # DNS : zones inverses (une par LAN), enregistrements A + PTR, redirecteurs
 ad_dns_reverse_zones:
@@ -92,12 +102,29 @@ ad_password_policy:
   LockoutDuration: "00:15:00"
   LockoutObservationWindow: "00:15:00"
 
+# MC08 bonus : stratégie affinée (PSO), plus dure pour les comptes d'administration.
+# La seule exception à « une politique par domaine » ; Precedence : la plus petite gagne.
+ad_pso:
+  name: PSO-Admins
+  applies_to: [GG_Admins_Domaine]
+  settings:
+    Precedence: 10
+    MinPasswordLength: 16
+    PasswordHistoryCount: 24
+    ComplexityEnabled: true
+    ReversibleEncryptionEnabled: false
+    LockoutThreshold: 3
+    LockoutDuration: "00:30:00"
+    LockoutObservationWindow: "00:30:00"
+
 # GPO de registre (Set-GPRegistryValue). Le nom est la clé : SRV = ordinateurs serveurs,
 # USR = utilisateurs. Liées à l'OU `links` de chaque site. Chaque valeur (DWORD) est posée
 # dans chacune des clés.
 ad_gpo_registry:
   - name: SRV - Pare-feu
     links: Serveurs
+    # Aussi les machines pas encore rangées (redircmp) : jamais sans pare-feu
+    extra_links: [OU=Nouveaux]
     keys:
       - HKLM\SOFTWARE\Policies\Microsoft\WindowsFirewall\DomainProfile
       - HKLM\SOFTWARE\Policies\Microsoft\WindowsFirewall\PrivateProfile

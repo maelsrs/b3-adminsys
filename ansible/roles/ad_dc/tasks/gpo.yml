@@ -21,6 +21,52 @@
         $Ansible.Changed = $true
       }
 
+- name: Stratégie affinée (PSO) des comptes admin
+  ansible.windows.win_powershell:
+    parameters:
+      Name: "{{ ad_pso.name }}"
+      Settings: "{{ ad_pso.settings }}"
+      AppliesTo: "{{ ad_pso.applies_to }}"
+    script: |
+      param($Name, [hashtable]$Settings, [string[]]$AppliesTo)
+      $Ansible.Changed = $false
+      $pso = Get-ADFineGrainedPasswordPolicy -Filter "Name -eq '$Name'"
+      if (-not $pso) {
+        New-ADFineGrainedPasswordPolicy -Name $Name @Settings
+        $Ansible.Changed = $true
+      } else {
+        $diff = @{}
+        foreach ($k in $Settings.Keys) {
+          if ("$($pso.$k)" -ne "$($Settings[$k])") { $diff[$k] = $Settings[$k] }
+        }
+        if ($diff.Count) {
+          Set-ADFineGrainedPasswordPolicy -Identity $Name @diff
+          $Ansible.Changed = $true
+        }
+      }
+      $subjects = @(Get-ADFineGrainedPasswordPolicySubject -Identity $Name | ForEach-Object Name)
+      foreach ($g in $AppliesTo) {
+        if ($g -notin $subjects) {
+          Add-ADFineGrainedPasswordPolicySubject -Identity $Name -Subjects $g
+          $Ansible.Changed = $true
+        }
+      }
+
+# Une machine jointe sans OU précise atterrit dans CN=Computers : pas une OU, aucune GPO ne
+# peut y être liée. redircmp l'envoie dans une OU où les GPO de base s'appliquent.
+- name: Nouveaux ordinateurs dans OU=Nouveaux (redircmp)
+  ansible.windows.win_powershell:
+    parameters:
+      Target: "OU=Nouveaux,OU={{ ad_ou_root }},{{ ad_base }}"
+    script: |
+      param($Target)
+      $Ansible.Changed = $false
+      if ((Get-ADDomain).ComputersContainer -ne $Target) {
+        redircmp $Target | Out-Null
+        if ($LASTEXITCODE) { throw "redircmp a échoué ($LASTEXITCODE)" }
+        $Ansible.Changed = $true
+      }
+
 # OU cibles : l'OU `links` de chaque site (OU=Serveurs,OU=Lille,…)
 - name: GPO de registre (créer, régler, lier)
   ansible.windows.win_powershell:
@@ -28,9 +74,10 @@
       Name: "{{ item.name }}"
       Keys: "{{ item['keys'] }}"
       Values: "{{ item['values'] }}"
-      Targets: "{{ ad_sites | map(attribute='name')
-                   | map('regex_replace', '^(.*)$', 'OU=' ~ item.links ~ ',OU=\\1,OU=' ~ ad_ou_root ~ ',' ~ ad_base)
-                   | list }}"
+      Targets: "{{ ((ad_sites | map(attribute='name')
+                   | map('regex_replace', '^(.*)$', 'OU=' ~ item.links ~ ',OU=\\1')
+                   | list) + (item.extra_links | default([])))
+                   | map('regex_replace', '$', ',OU=' ~ ad_ou_root ~ ',' ~ ad_base) | list }}"
     script: |
       param($Name, [string[]]$Keys, [hashtable]$Values, [string[]]$Targets)
       $Ansible.Changed = $false
