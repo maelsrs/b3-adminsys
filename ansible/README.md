@@ -691,6 +691,13 @@ srv01 joue le FS01 du TP (rôle `win_shares`, partages dans `group_vars/all/part
 | 5,1 Go dans Compta (5,45 Go libres sur D:) | refusé : quota de 5 Go |
 | `Get-VirtualDisk` | `vData Mirror Healthy`, 2 copies |
 
+**Bonus : clichés instantanés (VSS) sur `D:`** (`--tags vss`) : 10 % du volume réservé,
+tâche planifiée « Clichés instantanés D » à 7 h et 12 h (SYSTEM). Un utilisateur récupère
+lui-même un fichier supprimé ou écrasé (clic droit, « Versions précédentes »). Testé : fichier
+supprimé puis restauré depuis le cliché. Pas une sauvegarde : le cliché vit sur les mêmes
+disques, un rançongiciel qui chiffre le volume l'emporte aussi.
+
 ```sh
 ansible-playbook site.yml -l srv01 --tags partages   # changed=0 au 2e passage
+vssadmin list shadows /for=D:                        # sur srv01 : les clichés
 ```

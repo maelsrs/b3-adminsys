@@ -157,6 +157,40 @@
   loop_control:
     label: "{{ item.nom }} ({{ item.quota }})"
 
+# Bonus MC10 : clichés instantanés (VSS) de D:. Les utilisateurs récupèrent eux-mêmes un fichier
+# supprimé ou écrasé (clic droit, « Versions précédentes »). Pas une sauvegarde : mêmes disques.
+- name: Espace réservé aux clichés sur D (10 %)
+  ansible.windows.win_powershell:
+    parameters:
+      Drive: "{{ win_shares_drive }}"
+    script: |
+      param($Drive)
+      $Ansible.Changed = $false
+      $vol = (Get-CimInstance Win32_Volume -Filter "DriveLetter='${Drive}:'").DeviceID
+      if (-not (Get-CimInstance Win32_ShadowStorage | Where-Object { $_.Volume.DeviceID -eq $vol })) {
+        vssadmin add shadowstorage /for=${Drive}: /on=${Drive}: /maxsize=10% | Out-Null
+        if ($LASTEXITCODE) { throw "vssadmin a échoué ($LASTEXITCODE)" }
+        $Ansible.Changed = $true
+      }
+  tags: vss
+
+- name: Clichés deux fois par jour (7 h et 12 h)
+  community.windows.win_scheduled_task:
+    name: Clichés instantanés {{ win_shares_drive }}
+    description: Bonus MC10 (Ansible) - versions précédentes des partages
+    actions:
+      - path: C:\Windows\System32\vssadmin.exe
+        arguments: "create shadow /for={{ win_shares_drive }}:"
+    triggers:
+      - type: daily
+        start_boundary: "2026-01-01T07:00:00"
+      - type: daily
+        start_boundary: "2026-01-01T12:00:00"
+    username: SYSTEM
+    run_level: highest
+    state: present
+  tags: vss
+
 # MC08 : les partages vivaient sur C:\Partages, avant le pool
 - name: Ancien emplacement des partages
   ansible.windows.win_file:
