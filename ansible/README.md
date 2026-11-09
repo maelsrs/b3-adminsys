@@ -743,49 +743,56 @@ ansible-playbook playbooks/verif_trackr.yml
 journalctl -u trackr -f                              # sur db01, avant toute autre hypothèse
 ```
 
-## CI/CD GitLab (MC12)
+## CI/CD avec GitHub Actions (MC12)
 
-`.gitlab-ci.yml` (racine du dépôt), deux étapes :
+Le TP est écrit pour GitLab ; le dépôt vit sur GitHub, qui fait la même chose avec
+GitHub Actions. Correspondances : pipeline → *workflow*, job → *job*, runner → *runner
+auto-hébergé*, merge request → *pull request*, variable CI → *secret*.
 
-| Étape | Où | Quand | Quoi |
+`.github/workflows/ci.yml`, deux jobs :
+
+| Job | Où | Quand | Quoi |
 |---|---|---|---|
-| `lint` | runners partagés de gitlab.com (`python:3.12-slim`) | chaque push, chaque merge request | `yamllint .` puis `ansible-lint` (profil `production`, le plus strict) |
-| `deploy` | **notre runner** (tag `loginord`, exécuteur shell, sur le portable relié au VPN) | **à la main**, sur `main` seulement | `ansible-playbook site.yml` |
+| `lint` | machines de GitHub (`ubuntu-latest`) | chaque push, chaque pull request | `yamllint .` puis `ansible-lint` (profil `production`, le plus strict) |
+| `deploy` | **notre runner** (label `loginord`, sur le portable relié au VPN) | **au clic** (« Run workflow »), sur `main` seulement, après un lint vert | `ansible-playbook site.yml` |
 
-- **Aucun secret chez gitlab.com** : le lint remplace les fichiers du vault par des fichiers vides
-  (le contrôle de syntaxe charge les `vars_files`, sans avoir besoin de leurs valeurs).
-- **`VAULT_PASS`** : variable CI **protégée** (seulement sur `main`), **masquée** (`[MASKED]`
-  dans les journaux), de **type fichier** (la variable contient un chemin, exactement ce
-  qu'attend `ANSIBLE_VAULT_PASSWORD_FILE`). Côté Ansible, `no_log` sur les tâches qui manient
-  des mots de passe.
-- **`deploy`** : au clic (« Run job »), on peut changer `LIMIT` (`db01`) et `TAGS` (`trackr`).
-  `resource_group` : jamais deux déploiements en même temps sur les mêmes VM. Les routeurs et
-  openvpn sont exclus par défaut tant qu'Ansible n'y entre pas.
+- **Aucun secret chez GitHub côté lint** : le lint remplace les fichiers du vault par des
+  fichiers vides (le contrôle de syntaxe charge les `vars_files`, sans avoir besoin de leurs valeurs).
+- **`VAULT_PASS`** : secret de l'**environnement `production`**, seul le job `deploy` y a accès.
+  Masqué (`***`) dans les journaux. GitHub n'a pas de secret « de type fichier » : le job l'écrit
+  dans un fichier temporaire (`umask 077`), le passe par `ANSIBLE_VAULT_PASSWORD_FILE`, et
+  l'efface même en cas d'échec. Côté Ansible, `no_log` sur les tâches qui manient des mots de passe.
+- **Au clic**, on peut changer `limit` (`db01`) et `tags` (`trackr`). `concurrency` : jamais deux
+  déploiements en même temps. Routeurs et openvpn exclus par défaut tant qu'Ansible n'y entre pas.
+- **Dépôt public + runner auto-hébergé** : une pull request venue d'un fork ne doit jamais
+  s'exécuter sur le portable. Le `deploy` ne part que d'un `workflow_dispatch` (réservé à qui a
+  le droit d'écriture), et le lint tourne chez GitHub.
 - **Réglages du lint** : `.yamllint` (120 colonnes, `---` en tête de fichier, `true`/`false`
   seulement) et `.ansible-lint`. Une seule règle ignorée, `var-naming[no-role-prefix]` : `wg_*`,
   `ospf_*` et `partages` sont **partagées entre rôles** et définies dans l'inventaire.
 
-**Réglages GitLab** (Paramètres du projet) :
+**Réglages GitHub** (Settings du dépôt) :
 
 | Réglage | Valeur | Pourquoi |
 |---|---|---|
-| Dépôt → Branches protégées → `main` : pousser | Personne | plus de changement direct en production |
-| `main` : fusionner | Maintainers | |
-| Rôle des RH | Maintainer | **les RH valident** les arrivées et départs (MC13) |
-| Rôle de l'IT | Developer | l'IT propose, ne fusionne pas |
-| Merge requests → « Le pipeline doit réussir » | coché | pas de fusion sur un lint rouge |
-| CI/CD → Variables → `VAULT_PASS` | protégée, masquée, fichier | le mot de passe du vault |
+| Branches → règle sur `main` : *Require a pull request before merging* | coché ; 1 approbation en équipe (seul, on ne peut pas approuver sa propre PR : 0) | plus de push direct en production |
+| *Require status checks to pass* → `lint` | coché | pas de fusion sur un lint rouge |
+| *Require review from Code Owners* + `.github/CODEOWNERS` (au MC13) | les RH propriétaires des comptes | **les RH valident** arrivées et départs |
+| *Do not allow bypassing the above settings* | coché | l'admin aussi passe par une PR |
+| Environments → `production` → secret `VAULT_PASS` | le mot de passe du vault | seul `deploy` le voit |
+| Environments → `production` → *Required reviewers* (option) | un responsable | un second humain valide chaque déploiement |
+| Actions → *Fork pull request workflows* | *Require approval for all outside collaborators* | dépôt public, runner sur le portable |
 
-Sur gitlab.com gratuit, les approbations obligatoires sont payantes : le contournement est que
-seul le rôle Maintainer, donc les RH, peut fusionner dans `main`.
+Avantage sur gitlab.com gratuit : sur un dépôt public, les approbations obligatoires et
+CODEOWNERS sont gratuits ; pas besoin du contournement « seuls les Maintainers fusionnent ».
 
 **Le runner** (sur le portable, en utilisateur normal : il reprend sa clé SSH et son Ansible) :
+Settings → Actions → Runners → *New self-hosted runner* (Linux x64) donne les commandes
+de téléchargement et un jeton ; à l'étape `config.sh`, ajouter le label :
 
 ```sh
-sudo pacman -S gitlab-runner
-# Projet → Paramètres → CI/CD → Runners → New project runner, tag loginord → token glrt-…
-gitlab-runner register --url https://gitlab.com --token glrt-… --executor shell
-gitlab-runner run        # à laisser tourner pendant les déploiements (VPN connecté)
+./config.sh --url https://github.com/maelsrs/b3-adminsys --token <jeton> --labels loginord
+./run.sh        # à laisser tourner pendant les déploiements (VPN connecté)
 ```
 
 **Lancer le lint en local**, avant de pousser :

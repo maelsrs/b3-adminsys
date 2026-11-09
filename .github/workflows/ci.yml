@@ -1,0 +1,85 @@
+---
+# MC12 : chaque push est vérifié (lint), le déploiement part d'un clic, sur main seulement.
+#   lint   → machines de GitHub (ubuntu-latest), à chaque push et pull request
+#   deploy → notre runner auto-hébergé (label loginord), sur le portable qui voit les VM par le VPN
+name: CI
+
+"on":
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: Hôtes visés (--limit). Routeurs et openvpn exclus tant qu'Ansible n'y entre pas
+        default: "all:!routers:!openvpn"
+      tags:
+        description: Tags (--tags), vide = tout
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ansible
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/workflows/ci.yml
+      - name: Outils
+        run: |
+          pip install --quiet ansible-core ansible-lint yamllint
+          ansible-galaxy collection install -r requirements.yml -p collections
+      # Le lint tourne chez GitHub : jamais le mot de passe du vault. Le contrôle de syntaxe
+      # charge pourtant les vars_files ; des fichiers vides suffisent (copie jetable du dépôt)
+      - name: Vault remplacé par des fichiers vides
+        run: |
+          for f in vault/*.yml; do echo '--- {}' > "$f"; done
+          echo inutile > "$RUNNER_TEMP/vault_pass"
+          echo "ANSIBLE_VAULT_PASSWORD_FILE=$RUNNER_TEMP/vault_pass" >> "$GITHUB_ENV"
+      - name: yamllint
+        run: yamllint .
+      - name: ansible-lint
+        run: ansible-lint --offline
+
+  deploy:
+    # Seulement au clic (« Run workflow »), seulement sur main : un push ne déploie jamais
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: lint
+    runs-on: [self-hosted, loginord]
+    # L'environnement porte le secret VAULT_PASS (et peut exiger une validation avant de partir)
+    environment: production
+    # Un seul déploiement à la fois : deux playbooks sur les mêmes VM se marcheraient dessus
+    concurrency:
+      group: loginord
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: ansible
+    steps:
+      - uses: actions/checkout@v4
+      # GitHub n'a pas de secret « de type fichier » : on l'écrit, lisible par nous seuls,
+      # et on l'efface quoi qu'il arrive. Le contenu est masqué (***) dans les journaux
+      - name: Mot de passe du vault dans un fichier temporaire
+        env:
+          VAULT_PASS: ${{ secrets.VAULT_PASS }}
+        run: |
+          umask 077
+          printf '%s\n' "$VAULT_PASS" > "$RUNNER_TEMP/vault_pass"
+          echo "ANSIBLE_VAULT_PASSWORD_FILE=$RUNNER_TEMP/vault_pass" >> "$GITHUB_ENV"
+      # Exécuteur sur le portable : son Ansible, ses collections et sa clé SSH
+      - name: ansible-playbook site.yml
+        env:
+          ANSIBLE_FORCE_COLOR: "true"
+          LIMIT: ${{ inputs.limit }}
+          TAGS: ${{ inputs.tags }}
+        run: ansible-playbook site.yml --limit "$LIMIT" ${TAGS:+--tags "$TAGS"}
+      - name: Effacer le mot de passe
+        if: always()
+        run: rm -f "$RUNNER_TEMP/vault_pass"
