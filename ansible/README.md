@@ -770,10 +770,13 @@ auto-hébergé*, merge request → *pull request*, variable CI → *secret*.
 
 | Job | Où | Quand | Quoi |
 |---|---|---|---|
-| `lint` | machines de GitHub (`ubuntu-latest`) | chaque push, chaque pull request | `yamllint .` puis `ansible-lint` (profil `production`, le plus strict) |
+| `lint` | **notre runner** (label `loginord`) | chaque push, chaque pull request (hors forks) | `yamllint .` puis `ansible-lint` (profil `production`, le plus strict) |
 | `deploy` | **notre runner** (label `loginord`, sur le portable relié au VPN) | **au clic** (« Run workflow »), sur `main` seulement, après un lint vert | `ansible-playbook site.yml` |
 
-- **Aucun secret chez GitHub côté lint** : le lint remplace les fichiers du vault par des
+- **Les deux jobs sur notre runner** : sans moyen de paiement sur le compte, GitHub refuse ses
+  propres machines, même gratuites ; un runner auto-hébergé ne coûte rien. Pour rendre le lint
+  à GitHub : `runs-on: ubuntu-latest` (et `actions/setup-python`).
+- **Aucun secret côté lint** : le lint remplace les fichiers du vault par des
   fichiers vides (le contrôle de syntaxe charge les `vars_files`, sans avoir besoin de leurs valeurs).
 - **`VAULT_PASS`** : secret de l'**environnement `production`**, seul le job `deploy` y a accès.
   Masqué (`***`) dans les journaux. GitHub n'a pas de secret « de type fichier » : le job l'écrit
@@ -782,8 +785,8 @@ auto-hébergé*, merge request → *pull request*, variable CI → *secret*.
 - **Au clic**, on peut changer `limit` (`db01`) et `tags` (`trackr`). `concurrency` : jamais deux
   déploiements en même temps. Routeurs et openvpn exclus par défaut tant qu'Ansible n'y entre pas.
 - **Dépôt public + runner auto-hébergé** : une pull request venue d'un fork ne doit jamais
-  s'exécuter sur le portable. Le `deploy` ne part que d'un `workflow_dispatch` (réservé à qui a
-  le droit d'écriture), et le lint tourne chez GitHub.
+  s'exécuter sur le portable : le lint saute les PR venues d'un fork, et le `deploy` ne part que
+  d'un `workflow_dispatch` (réservé à qui a le droit d'écriture).
 - **Réglages du lint** : `.yamllint` (120 colonnes, `---` en tête de fichier, `true`/`false`
   seulement) et `.ansible-lint`. Une seule règle ignorée, `var-naming[no-role-prefix]` : `wg_*`,
   `ospf_*` et `partages` sont **partagées entre rôles** et définies dans l'inventaire.

@@ -1,7 +1,8 @@
 ---
 # MC12 : chaque push est vérifié (lint), le déploiement part d'un clic, sur main seulement.
-#   lint   → machines de GitHub (ubuntu-latest), à chaque push et pull request
-#   deploy → notre runner auto-hébergé (label loginord), sur le portable qui voit les VM par le VPN
+#   lint   → à chaque push et pull request (hors forks)
+#   deploy → au clic, sur main
+# Les deux sur notre runner auto-hébergé (label loginord), le portable qui voit les VM par le VPN
 name: CI
 
 "on":
@@ -21,23 +22,31 @@ permissions:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    # Sur notre runner, pas chez GitHub : le compte n'a pas de moyen de paiement, GitHub refuse
+    # alors ses propres machines (même gratuites). Un runner auto-hébergé ne coûte rien.
+    # Dépôt public : une pull request venue d'un fork ne s'exécute jamais sur le portable
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, loginord]
     defaults:
       run:
         working-directory: ansible
+    env:
+      # Outils et collections gardés d'un passage à l'autre, hors du dossier de travail
+      LINT_HOME: ~/.cache/loginord-lint
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/workflows/ci.yml
-      - name: Outils
+      - name: Outils (venv et collections, réutilisés)
         run: |
-          pip install --quiet ansible-core ansible-lint yamllint
-          ansible-galaxy collection install -r requirements.yml -p collections
-      # Le lint tourne chez GitHub : jamais le mot de passe du vault. Le contrôle de syntaxe
-      # charge pourtant les vars_files ; des fichiers vides suffisent (copie jetable du dépôt)
+          home=$(eval echo "$LINT_HOME")
+          [ -x "$home/venv/bin/ansible-lint" ] || python3 -m venv "$home/venv"
+          "$home/venv/bin/pip" install --quiet --upgrade ansible-core ansible-lint yamllint
+          "$home/venv/bin/ansible-galaxy" collection install -r requirements.yml -p "$home/collections"
+          echo "$home/venv/bin" >> "$GITHUB_PATH"
+          echo "ANSIBLE_COLLECTIONS_PATH=$home/collections" >> "$GITHUB_ENV"
+      # Le contrôle de syntaxe charge les vars_files : des fichiers vides suffisent, le lint n'a
+      # jamais besoin du mot de passe du vault (checkout remet les vrais au passage suivant)
       - name: Vault remplacé par des fichiers vides
         run: |
           for f in vault/*.yml; do echo '--- {}' > "$f"; done
