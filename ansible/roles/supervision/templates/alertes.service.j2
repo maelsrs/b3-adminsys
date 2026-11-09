@@ -1,0 +1,14 @@
+# Géré par Ansible (rôle supervision, MC15)
+[Unit]
+Description=Récepteur des alertes (webhook Alertmanager vers le journal)
+
+[Service]
+ExecStart=/usr/local/bin/alertes-recepteur
+DynamicUser=yes
+ProtectSystem=strict
+PrivateTmp=yes
+NoNewPrivileges=yes
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

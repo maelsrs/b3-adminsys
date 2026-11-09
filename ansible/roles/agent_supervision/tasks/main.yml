@@ -1,0 +1,9 @@
+---
+# MC15 : l'agent de supervision (mesures pour Prometheus) et l'envoi des journaux vers mon01
+- name: Debian
+  ansible.builtin.import_tasks: debian.yml
+  when: ansible_facts.os_family == 'Debian'
+
+- name: Windows
+  ansible.builtin.import_tasks: windows.yml
+  when: ansible_facts.os_family == 'Windows'

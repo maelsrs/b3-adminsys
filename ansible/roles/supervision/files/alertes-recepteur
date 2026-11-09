@@ -1,0 +1,20 @@
+#!/usr/bin/python3
+"""Reçoit les alertes d'Alertmanager (webhook) et les écrit dans le journal : journalctl -u alertes."""
+import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+
+class Recepteur(BaseHTTPRequestHandler):
+    def do_POST(self):
+        corps = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+        for a in corps.get("alerts", []):
+            etat = "ALERTE" if a["status"] == "firing" else "RÉSOLU"
+            print(f"{etat} {a['labels'].get('alertname')} : {a['annotations'].get('resume', '')}", flush=True)
+        self.send_response(200)
+        self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+HTTPServer(("127.0.0.1", 9095), Recepteur).serve_forever()

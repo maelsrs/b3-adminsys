@@ -1,0 +1,7 @@
+---
+# Supervision (Prometheus, Alertmanager) et journaux centralisés, à Lille (MC15). VM 122.
+baseline_linux_lan:
+  iface: ens19
+  address: 10.1.10.22
+  prefix: 24
+  gateway: 10.1.10.1

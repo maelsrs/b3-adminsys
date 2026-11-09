@@ -1,0 +1,116 @@
+---
+# MC15 : mon01 supervise (Prometheus, Alertmanager, sondes) et reçoit les journaux (rsyslog).
+# Prometheus plutôt que Zabbix : paquets Debian, pas de base de données, peu de RAM (1 Go).
+- name: DNS de l'AD (trackr.loginord.internal)
+  ansible.builtin.include_role:
+    name: ad_member
+    tasks_from: dns
+
+- name: Paquets
+  ansible.builtin.apt:
+    name: [prometheus, prometheus-alertmanager, prometheus-blackbox-exporter, rsyslog]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Prometheus garde 3 mois de mesures
+  ansible.builtin.lineinfile:
+    path: /etc/default/prometheus
+    regexp: '^ARGS='
+    line: 'ARGS="--storage.tsdb.retention.time={{ supervision_retention_jours }}d"'
+  notify: Recharger Prometheus
+
+- name: Règles d'alerte
+  ansible.builtin.copy:
+    src: alertes.yml
+    dest: /etc/prometheus/alertes.yml
+    mode: "0644"
+    validate: promtool check rules %s
+  notify: Recharger Prometheus
+
+# promtool vérifie aussi les règles citées : elles doivent être en place avant
+- name: Cibles de Prometheus
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    mode: "0644"
+    validate: promtool check config %s
+  notify: Recharger Prometheus
+
+# Le ping de la sonde : des sockets ICMP « sans privilège » (comme la commande ping), plutôt
+# qu'une socket brute réservée à root. Debian les interdit par défaut (plage « 1 0 »)
+- name: La sonde a le droit de pinguer
+  ansible.posix.sysctl:
+    name: net.ipv4.ping_group_range
+    value: "0 2147483647"
+    sysctl_file: /etc/sysctl.d/60-ping.conf
+    reload: true
+
+- name: Sondes (ping, HTTP)
+  ansible.builtin.template:
+    src: blackbox.yml.j2
+    dest: /etc/prometheus/blackbox.yml
+    mode: "0644"
+  notify: Recharger blackbox
+
+# Le webhook Discord est un secret : lisible par root et prometheus seulement
+- name: Où envoyer les alertes
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: /etc/prometheus/alertmanager.yml
+    owner: root
+    group: prometheus
+    mode: "0640"
+    validate: amtool check-config %s
+  diff: false
+  notify: Recharger Alertmanager
+
+- name: Récepteur des alertes (journal)
+  ansible.builtin.copy:
+    src: alertes-recepteur
+    dest: /usr/local/bin/alertes-recepteur
+    mode: "0755"
+  notify: Relancer le récepteur d'alertes
+
+- name: Unité du récepteur
+  ansible.builtin.template:
+    src: alertes.service.j2
+    dest: /etc/systemd/system/alertes.service
+    mode: "0644"
+  notify: Relancer le récepteur d'alertes
+
+- name: Services démarrés
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+    daemon_reload: true
+  loop: [prometheus, prometheus-alertmanager, prometheus-blackbox-exporter, alertes, rsyslog]
+
+# Journaux : un fichier par machine, gardés 3 mois
+- name: Réception des journaux (TCP 514)
+  ansible.builtin.template:
+    src: central.conf.j2
+    dest: /etc/rsyslog.d/10-central.conf
+    mode: "0644"
+    validate: rsyslogd -N1 -f %s
+  notify: Relancer rsyslog
+
+- name: Rotation, 3 mois de journaux
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/central
+    content: |
+      # Géré par Ansible (rôle supervision, MC15)
+      /var/log/central/*.log {
+          daily
+          rotate {{ supervision_retention_jours }}
+          compress
+          delaycompress
+          missingok
+          notifempty
+          sharedscripts
+          postrotate
+              /usr/lib/rsyslog/rsyslog-rotate
+          endscript
+      }
+    mode: "0644"

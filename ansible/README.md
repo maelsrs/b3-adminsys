@@ -916,3 +916,24 @@ ansible-playbook playbooks/rapport_maj.yml                    # le rapport
 ansible-playbook playbooks/campagne.yml                       # le dimanche
 cat /var/log/unattended-upgrades/unattended-upgrades.log      # sur une Debian : ce qu'il a fait
 ```
+
+## Supervision et journaux (MC15)
+
+**mon01** (VM 122, Lille, 10.1.10.22), rôle `supervision` : Prometheus (3 mois de mesures),
+Alertmanager, sondes blackbox (ping de chaque machine, page de santé de TrackR), rsyslog qui reçoit
+les journaux (`/var/log/central/<machine>.log`, 3 mois). Prometheus plutôt que Zabbix : paquets
+Debian, pas de base de données, tient dans 1 Go de RAM.
+
+Rôle `agent_supervision` : `prometheus-node-exporter` sur les Debian (disques, RAID, services
+systemd), `windows_exporter` sur les Windows (port 9182 ouvert pour mon01 seulement), envoi des
+journaux Debian vers mon01 avec file d'attente sur disque (liaison coupée : rien n'est perdu).
+
+Alertes (`roles/supervision/files/alertes.yml`) : machine injoignable, **liaison Dunkerque coupée**
+(ping de rtr-b), disque à moins de 10 % pendant 5 min, RAID dégradé, TrackR ne répond plus, service
+arrêté (TrackR, PostgreSQL, slapd, SSSD… ; AD DS, DNS, Kerberos côté Windows). Envoi : journal de
+mon01 (`journalctl -u alertes`) et Discord si `vault_discord_webhook` est défini.
+
+```sh
+ansible-playbook site.yml --tags supervision
+ansible-playbook playbooks/verif_supervision.yml     # cibles, alertes en cours, journaux reçus
+```

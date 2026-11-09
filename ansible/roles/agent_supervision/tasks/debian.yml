@@ -1,0 +1,42 @@
+---
+- name: Agent node-exporter et rsyslog
+  ansible.builtin.apt:
+    name: [prometheus-node-exporter, rsyslog]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# RAID (mdadm) : collecteur actif par défaut. systemd : seulement les services qui comptent
+- name: Agent, services systemd suivis
+  ansible.builtin.lineinfile:
+    path: /etc/default/prometheus-node-exporter
+    regexp: '^ARGS='
+    line: >-
+      ARGS="--collector.systemd --collector.systemd.unit-include='{{ agent_supervision_unites }}'"
+  notify: Relancer node-exporter
+
+- name: Agent démarré
+  ansible.builtin.service:
+    name: prometheus-node-exporter
+    state: started
+    enabled: true
+
+# File d'attente sur disque : liaison coupée, Dunkerque garde ses journaux et les envoie au retour
+- name: Journaux envoyés à mon01
+  ansible.builtin.copy:
+    dest: /etc/rsyslog.d/90-central.conf
+    content: |
+      # Géré par Ansible (rôle agent_supervision, MC15)
+      *.* action(type="omfwd" target="{{ agent_supervision_ip }}" port="514" protocol="tcp"
+                 queue.type="LinkedList" queue.filename="central" queue.maxDiskSpace="200m"
+                 queue.saveOnShutdown="on" action.resumeRetryCount="-1")
+    mode: "0644"
+    validate: rsyslogd -N1 -f %s
+  when: inventory_hostname not in groups['monitoring']
+  notify: Relancer rsyslog
+
+- name: Service rsyslog démarré
+  ansible.builtin.service:
+    name: rsyslog
+    state: started
+    enabled: true

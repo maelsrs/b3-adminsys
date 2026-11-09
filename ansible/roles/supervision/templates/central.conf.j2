@@ -1,0 +1,8 @@
+# Géré par Ansible (rôle supervision, MC15) : les journaux des Debian, un fichier par machine
+module(load="imtcp")
+template(name="ParMachine" type="string" string="/var/log/central/%HOSTNAME%.log")
+ruleset(name="distant") {
+  action(type="omfile" dynaFile="ParMachine" fileCreateMode="0640" dirCreateMode="0750")
+  stop
+}
+input(type="imtcp" port="514" ruleset="distant")

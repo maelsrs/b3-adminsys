@@ -1,0 +1,14 @@
+---
+# Machines surveillées par leur agent. openvpn et les routeurs : Ansible n'y entre pas encore,
+# ils sont seulement « pingés » (et le ping de rtr-b dit si la liaison Dunkerque tient)
+supervision_debian: "{{ groups['linux'] | difference(groups['routers'] + ['openvpn']) }}"
+supervision_windows: "{{ groups['windows'] }}"
+supervision_ping_extra:
+  - {name: rtr-a, ip: 10.1.10.1}
+  - {name: rtr-b, ip: 10.1.20.1}
+  - {name: openvpn, ip: 10.1.10.23}
+supervision_trackr_url: "http://trackr.{{ ad_domain }}:{{ trackr_port | default(8080) }}/health"
+# 3 mois d'historique, mesures et journaux
+supervision_retention_jours: 92
+# Webhook Discord (vault) : facultatif ; les alertes arrivent toujours dans le journal de mon01
+supervision_discord_webhook: "{{ vault_discord_webhook | default('') }}"

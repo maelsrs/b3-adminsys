@@ -1,0 +1,62 @@
+# Géré par Ansible (rôle supervision, MC15)
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['localhost:9093']
+
+rule_files:
+  - /etc/prometheus/alertes.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+        labels: {instance: {{ inventory_hostname }}}
+
+  # Agents Debian : CPU, RAM, disques, RAID (mdadm), services systemd
+  - job_name: node
+    static_configs:
+{% for h in supervision_debian %}
+      - targets: ['{{ hostvars[h].baseline_linux_lan.address | default(hostvars[h].ansible_host) }}:9100']
+        labels: {instance: {{ h }}}
+{% endfor %}
+
+  # Agents Windows : CPU, RAM, disques, services (AD DS, DNS…)
+  - job_name: windows
+    static_configs:
+{% for h in supervision_windows %}
+      - targets: ['{{ hostvars[h].baseline_win_lan.address | default(hostvars[h].ansible_host) }}:9182']
+        labels: {instance: {{ h }}}
+{% endfor %}
+
+  # Chaque machine répond-elle ? (y compris celles sans agent)
+  - job_name: ping
+    metrics_path: /probe
+    params: {module: [icmp]}
+    static_configs:
+{% for h in supervision_debian + supervision_windows %}
+      - targets: ['{{ hostvars[h].baseline_linux_lan.address | default(hostvars[h].baseline_win_lan.address | default(hostvars[h].ansible_host)) }}']
+        labels: {instance: {{ h }}}
+{% endfor %}
+{% for p in supervision_ping_extra %}
+      - targets: ['{{ p.ip }}']
+        labels: {instance: {{ p.name }}}
+{% endfor %}
+    relabel_configs: &sonde
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: localhost:9115
+
+  # TrackR vu comme un utilisateur : la page de santé répond, et dit « ok »
+  - job_name: trackr
+    metrics_path: /probe
+    params: {module: [http_ok]}
+    static_configs:
+      - targets: ['{{ supervision_trackr_url }}']
+        labels: {instance: trackr}
+    relabel_configs: *sonde

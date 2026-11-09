@@ -1,0 +1,74 @@
+---
+# Géré par Ansible (rôle supervision, MC15). Peu d'alertes, chacune utile : une alerte que
+# personne ne lit ne sert à rien. `for` : pas d'alerte pour un pic de quelques secondes.
+groups:
+  - name: loginord
+    rules:
+      - alert: MachineInjoignable
+        expr: probe_success{job="ping"} == 0
+        for: 2m
+        labels: {gravite: critique}
+        annotations:
+          resume: "{{ $labels.instance }} ne répond plus au réseau"
+
+      # rtr-b est de l'autre côté du tunnel : s'il ne répond plus depuis Lille, la liaison est coupée
+      - alert: LiaisonDunkerqueCoupee
+        expr: probe_success{job="ping", instance="rtr-b"} == 0
+        for: 1m
+        labels: {gravite: critique}
+        annotations:
+          resume: "La liaison Lille - Dunkerque est coupée (Dunkerque continue seul)"
+
+      - alert: AgentMuet
+        expr: up{job=~"node|windows"} == 0
+        for: 5m
+        labels: {gravite: avertissement}
+        annotations:
+          resume: "L'agent de supervision de {{ $labels.instance }} ne répond plus"
+
+      - alert: DisqueBientotPlein
+        expr: >-
+          node_filesystem_avail_bytes{fstype!~"tmpfs|ramfs|devtmpfs|overlay"}
+          / node_filesystem_size_bytes{fstype!~"tmpfs|ramfs|devtmpfs|overlay"} < 0.10
+        for: 5m
+        labels: {gravite: critique}
+        annotations:
+          resume: "{{ $labels.instance }} : {{ $labels.mountpoint }} a moins de 10 % d'espace libre"
+
+      - alert: DisqueBientotPlein
+        expr: windows_logical_disk_free_bytes{volume!~"HarddiskVolume.*"} / windows_logical_disk_size_bytes < 0.10
+        for: 5m
+        labels: {gravite: critique}
+        annotations:
+          resume: "{{ $labels.instance }} : {{ $labels.volume }} a moins de 10 % d'espace libre"
+
+      # Prévenu au premier disque, pas au second (MC09)
+      - alert: RaidDegrade
+        expr: >-
+          node_md_disks{state="failed"} > 0
+          or node_md_disks_required - ignoring(state) node_md_disks{state="active"} > 0
+        for: 1m
+        labels: {gravite: critique}
+        annotations:
+          resume: "{{ $labels.instance }} : le RAID {{ $labels.device }} a perdu un disque"
+
+      - alert: TrackRNeRepondPlus
+        expr: probe_success{job="trackr"} == 0
+        for: 1m
+        labels: {gravite: critique}
+        annotations:
+          resume: "TrackR ne répond plus : les quais ne peuvent plus suivre les expéditions"
+
+      - alert: ServiceArrete
+        expr: node_systemd_unit_state{state="active"} == 0
+        for: 2m
+        labels: {gravite: critique}
+        annotations:
+          resume: "{{ $labels.instance }} : le service {{ $labels.name }} est arrêté"
+
+      - alert: ServiceWindowsArrete
+        expr: windows_service_state{state="running", name=~"ntds|dns|kdc|netlogon|lanmanserver|srmsvc"} == 0
+        for: 2m
+        labels: {gravite: critique}
+        annotations:
+          resume: "{{ $labels.instance }} : le service {{ $labels.name }} est arrêté"

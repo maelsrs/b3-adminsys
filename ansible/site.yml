@@ -87,3 +87,19 @@
   roles:
     - role: trackr
       tags: trackr
+
+- name: Agents de supervision et envoi des journaux (MC15)
+  hosts: linux:windows:!routers:!openvpn
+  vars_files:
+    - vault/secrets.yml
+  roles:
+    - role: agent_supervision
+      tags: supervision
+
+- name: Supervision et journaux centralisés (MC15)
+  hosts: monitoring
+  vars_files:
+    - vault/secrets.yml
+  roles:
+    - role: supervision
+      tags: supervision

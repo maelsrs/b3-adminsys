@@ -1,0 +1,20 @@
+---
+- name: Agent windows_exporter (port 9182)
+  ansible.windows.win_package:
+    path: "{{ agent_supervision_windows_msi }}"
+    arguments: ENABLED_COLLECTORS=cpu,cs,logical_disk,memory,net,os,service,system LISTEN_PORT=9182
+    creates_service: windows_exporter
+    state: present
+
+# Pare-feu (entrant bloqué par la GPO sur les serveurs) : seulement mon01
+- name: Pare-feu, mon01 interroge l'agent
+  community.windows.win_firewall_rule:
+    name: Supervision (windows_exporter) depuis mon01
+    localport: 9182
+    protocol: tcp
+    direction: in
+    action: allow
+    remoteip: "{{ agent_supervision_ip }}"
+    profiles: [domain, private, public]
+    state: present
+    enabled: true

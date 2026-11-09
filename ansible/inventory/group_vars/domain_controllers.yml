@@ -79,6 +79,8 @@ ad_dns_records:
     ip: 10.1.10.21
   - name: db01
     ip: 10.1.20.21
+  - name: mon01
+    ip: 10.1.10.22
 ad_dns_forwarders: [1.1.1.1, 9.9.9.9]
 
 # MC08 : une seule politique de mots de passe par domaine, réglée sur le domaine lui-même

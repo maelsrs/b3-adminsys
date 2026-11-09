@@ -1,0 +1,10 @@
+---
+agent_supervision_serveur: "{{ groups['monitoring'] | first }}"
+agent_supervision_ip: "{{ hostvars[agent_supervision_serveur].baseline_linux_lan.address }}"
+# Services suivis (alerte ServiceArrete) : ceux dont dépendent les camions et l'accès
+agent_supervision_unites: >-
+  (trackr|postgresql@.+|slapd|sssd|ssh|chrony|rsyslog|prometheus|prometheus-alertmanager)\.service
+agent_supervision_windows_version: 0.29.2
+agent_supervision_windows_msi: >-
+  https://github.com/prometheus-community/windows_exporter/releases/download/v{{ agent_supervision_windows_version
+  }}/windows_exporter-{{ agent_supervision_windows_version }}-amd64.msi

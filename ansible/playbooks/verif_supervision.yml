@@ -1,0 +1,44 @@
+---
+# Vérifications MC15 : ansible-playbook playbooks/verif_supervision.yml
+# Cibles de Prometheus, alertes en cours, journaux reçus sur mon01
+- name: Supervision et journaux vus de mon01
+  hosts: monitoring
+  gather_facts: false
+  tasks:
+    - name: Cibles de Prometheus
+      ansible.builtin.uri:
+        url: http://localhost:9090/api/v1/targets?state=active
+      register: cibles
+
+    - name: Alertes en cours (Alertmanager)
+      ansible.builtin.uri:
+        url: http://localhost:9093/api/v2/alerts
+      register: alertes
+
+    - name: Journaux reçus, par machine
+      ansible.builtin.shell: |
+        set -o pipefail
+        for f in /var/log/central/*.log; do
+          printf '%s : %s lignes, dernière : %s\n' "$(basename "$f" .log)" "$(wc -l < "$f")" \
+            "$(tail -1 "$f" | cut -c1-80)"
+        done
+      args:
+        executable: /bin/bash
+      become: true
+      register: journaux
+      changed_when: false
+
+    - name: Résultat
+      ansible.builtin.debug:
+        msg:
+          cibles: >-
+            {{ cibles.json.data.activeTargets
+               | map(attribute='labels') | map(attribute='job') | zip(
+                 cibles.json.data.activeTargets | map(attribute='labels') | map(attribute='instance'),
+                 cibles.json.data.activeTargets | map(attribute='health'))
+               | map('join', ' ') | list }}
+          alertes: >-
+            {{ alertes.json | map(attribute='labels') | map(attribute='alertname')
+               | zip(alertes.json | map(attribute='labels') | map(attribute='instance', default=''))
+               | map('join', ' ') | list }}
+          journaux: "{{ journaux.stdout_lines }}"
