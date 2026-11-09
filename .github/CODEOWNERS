@@ -1,0 +1,4 @@
+# MC13 : le fichier du personnel est aux RH. Avec « Require review from Code Owners » sur main,
+# aucune arrivée ni aucun départ n'est fusionné sans leur validation.
+# (Compte des RH à mettre ici ; en attendant, le propriétaire du dépôt.)
+/ansible/inventory/group_vars/all/personnel.yml @maelsrs

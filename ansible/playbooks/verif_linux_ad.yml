@@ -3,8 +3,6 @@
 - name: Debian dans le domaine
   hosts: ad_members
   gather_facts: false
-  vars:
-    ad_users: "{{ hostvars[groups['domain_controllers'] | first].ad_users }}"
   tasks:
     - name: Domaine joint
       ansible.builtin.command: realm list --name-only

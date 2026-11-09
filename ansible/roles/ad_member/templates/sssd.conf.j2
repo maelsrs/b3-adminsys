@@ -29,5 +29,10 @@ krb5_store_password_if_offline = True
 # Qui a le droit d'entrer ; les autres comptes AD sont refusés (journal : journalctl -u sssd)
 access_provider = simple
 simple_allow_groups = {{ ad_member_login_groups | map('lower') | join(', ') }}
+{% if personnel_partis | default([]) %}
+# MC13 : les partis (personnel.yml). Refusés même hors ligne, quand SSSD ne peut pas voir que
+# le compte est désactivé dans AD : le refus vient de ce fichier, pas du cache
+simple_deny_users = {{ personnel_partis | join(', ') }}
+{% endif %}
 # Par défaut SSSD applique les GPO de connexion Windows : source de refus « inexplicables »
 ad_gpo_access_control = permissive

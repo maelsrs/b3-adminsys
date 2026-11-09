@@ -30,17 +30,32 @@
   loop_control:
     label: "{{ item.name }}"
 
-- name: Utilisateurs de test
+# MC13 : arrivée, mutation, départ, depuis personnel.yml (ad_users est calculé, regles.yml).
+# Le mot de passe initial n'est à changer qu'à la création : sur un compte existant, le forcer
+# à chaque passage obligerait tout le monde à en changer.
+- name: Comptes AD existants
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      @(Get-ADUser -Filter * | ForEach-Object SamAccountName)
+  register: ad_existants
+  check_mode: false
+
+# identity (sAMAccountName) : retrouvé où qu'il soit, puis déplacé vers `path` (mutation, départ)
+- name: Salariés (arrivée, mutation, départ)
   microsoft.ad.user:
+    identity: "{{ item.name }}"
     name: "{{ item.name }}"
     sam_account_name: "{{ item.name }}"
     upn: "{{ item.name }}@{{ ad_domain }}"
     firstname: "{{ item.firstname }}"
     surname: "{{ item.surname }}"
-    # `ou` pour les comptes hors site (adm-xxx dans OU=Admins)
-    path: "{{ item.ou if item.ou is defined else 'OU=Utilisateurs,OU=' ~ item.site }},OU={{ ad_ou_root }},{{ ad_base }}"
+    # OU calculée : celle du site, OU=Admins (adm-xxx) ou OU=Départs
+    path: "{{ item.ou }},OU={{ ad_ou_root }},{{ ad_base }}"
+    enabled: "{{ item.enabled }}"
     password: "{{ vault_pwd_init }}"
     update_password: on_create
+    password_expired: "{{ true if item.name not in ad_existants.output else omit }}"
     # Domain Users est le groupe principal : AD refuse de le retirer, set doit l'inclure
     groups:
       set: "{{ item.groups + ['Domain Users'] }}"

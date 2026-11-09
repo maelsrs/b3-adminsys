@@ -3,3 +3,8 @@
   ansible.builtin.service:
     name: sssd
     state: restarted
+
+# Les groupes et l'état des comptes en cache sont oubliés : relus dans AD à la prochaine demande
+- name: Vider le cache SSSD
+  ansible.builtin.command: sss_cache -E
+  changed_when: true

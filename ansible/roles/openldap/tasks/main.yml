@@ -152,10 +152,22 @@
       community.general.ldap_passwd:
         dn: "uid={{ item.uid }},ou=prestataires,{{ openldap_base }}"
         passwd: "{{ vault_pwd_init }}"
-      loop: "{{ openldap_prestataires }}"
+      loop: "{{ openldap_prestataires | rejectattr('expire') }}"
       loop_control:
         label: "{{ item.uid }}"
       no_log: true
+
+    # MC13 : mission terminée (expiration passée) : l'entrée reste (traçabilité), mais plus
+    # aucun mot de passe ne correspond ({CRYPT}* : aucun hachage ne vaut « * ») ; retiré des groupes
+    - name: Prestataires en fin de mission, mot de passe bloqué
+      community.general.ldap_attrs:
+        dn: "uid={{ item.uid }},ou=prestataires,{{ openldap_base }}"
+        attributes:
+          userPassword: "{CRYPT}*"
+        state: exact
+      loop: "{{ openldap_prestataires | selectattr('expire') }}"
+      loop_control:
+        label: "{{ item.uid }}"
 
     # groupOfNames exige au moins un membre
     - name: Groupes
@@ -164,7 +176,8 @@
         objectClass: [groupOfNames]
         attributes:
           member: >-
-            {{ item.members | map('regex_replace', '^(.*)$', 'uid=\\1,ou=prestataires,' ~ openldap_base) | list }}
+            {{ item.members | map('regex_replace', '^', 'uid=')
+               | map('regex_replace', '$', ',ou=prestataires,' ~ openldap_base) | list }}
       loop: "{{ openldap_groups }}"
       loop_control:
         label: "{{ item.cn }}"
@@ -174,7 +187,8 @@
         dn: "cn={{ item.cn }},ou=prestataires,{{ openldap_base }}"
         attributes:
           member: >-
-            {{ item.members | map('regex_replace', '^(.*)$', 'uid=\\1,ou=prestataires,' ~ openldap_base) | list }}
+            {{ item.members | map('regex_replace', '^', 'uid=')
+               | map('regex_replace', '$', ',ou=prestataires,' ~ openldap_base) | list }}
         state: exact
       loop: "{{ openldap_groups }}"
       loop_control:

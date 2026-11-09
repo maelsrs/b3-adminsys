@@ -66,13 +66,25 @@
     owner: root
     group: root
     mode: "0600"
-  notify: Redémarrer SSSD
+  notify:
+    - Redémarrer SSSD
+    - Vider le cache SSSD
 
 - name: SSSD démarré
   ansible.builtin.service:
     name: sssd
     state: started
     enabled: true
+
+# MC13 : un départ, c'est le soir même. Une session SSH déjà ouverte survivrait au refus de SSSD
+- name: Partis, fermer leurs sessions encore ouvertes
+  ansible.builtin.shell: |
+    if loginctl show-user {{ item }} >/dev/null 2>&1; then
+      loginctl terminate-user {{ item }} && echo FERMEE
+    fi
+  loop: "{{ personnel_partis | default([]) }}"
+  register: ad_member_sessions
+  changed_when: "'FERMEE' in ad_member_sessions.stdout"
 
 - name: Répertoire personnel déjà créé à la connexion ?
   ansible.builtin.command: grep -q pam_mkhomedir /etc/pam.d/common-session

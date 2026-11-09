@@ -1,0 +1,69 @@
+---
+# MC13 : les règles de l'IT. Les groupes et l'OU se CALCULENT depuis personnel.yml (service,
+# site, dates), ils ne se saisissent jamais à la main.
+regles:
+  # Service → groupes globaux (AGDLP : les droits suivent, via les DL)
+  services:
+    compta: [GG_Compta]
+    direction: [GG_Direction]
+    rh: [GG_RH]
+    it: [GG_Adminsys, GG_Admins_Linux]
+    dev: [GG_Developpeurs]
+    exploitation: [GG_Exploitation]
+  # Site → nom de l'OU de site (OU=Utilisateurs,OU=<site>,OU=LogiNord)
+  sites:
+    lille: Lille
+    dunkerque: Dunkerque
+  # Groupes du second compte (adm-prénom) des admin: true
+  admin_groupes: [GG_Admins_Domaine]
+  # Mission d'un prestataire → groupes OpenLDAP
+  missions:
+    trackr: [presta-trackr]
+
+# Heure de Paris (contrôleur et runner réglés dessus) : les départs dont l'heure est passée
+personnel_maintenant: "{{ now(fmt='%Y-%m-%dT%H:%M') }}"
+
+# Comptes AD calculés : salariés, plus le compte adm- des admins. parti = départ dont l'heure
+# est passée : désactivé, rangé dans OU=Départs, retiré de tous ses groupes (sauf Domain Users).
+ad_users: >-
+  {%- set out = [] -%}
+  {%- for p in personnel if p.type | default('salarie') == 'salarie' -%}
+  {%-   set dep = p.depart | default('') | string -%}
+  {%-   set dep = dep ~ 'T18:00' if dep | length == 10 else dep -%}
+  {%-   set arr = p.arrivee | default('') | string -%}
+  {%-   set parti = dep != '' and dep <= personnel_maintenant -%}
+  {%-   set actif = not parti and (arr == '' or arr[:10] <= personnel_maintenant[:10]) -%}
+  {%-   set ou = 'OU=Départs' if parti else 'OU=Utilisateurs,OU=' ~ regles.sites[p.site] -%}
+  {%-   set _ = out.append({'name': p.id, 'firstname': p.prenom, 'surname': p.nom, 'ou': ou,
+                            'enabled': actif, 'parti': parti,
+                            'groups': [] if parti else regles.services[p.service]}) -%}
+  {%-   if p.admin | default(false) -%}
+  {%-     set _ = out.append({'name': 'adm-' ~ p.id.split('.')[0], 'firstname': p.prenom,
+                              'surname': p.nom ~ ' (admin)', 'ou': 'OU=Départs' if parti else 'OU=Admins',
+                              'enabled': actif, 'parti': parti,
+                              'groups': [] if parti else regles.admin_groupes}) -%}
+  {%-   endif -%}
+  {%- endfor -%}
+  {{ out }}
+
+# Les partis, pour les Debian : refusés par SSSD même hors ligne, sessions fermées
+personnel_partis: "{{ ad_users | selectattr('parti') | map(attribute='name') | list }}"
+
+# Prestataires (OpenLDAP) : mission terminée = mot de passe bloqué, retiré des groupes
+openldap_prestataires: >-
+  {%- set out = [] -%}
+  {%- for p in personnel if p.type | default('salarie') == 'prestataire' -%}
+  {%-   set _ = out.append({'uid': p.id, 'cn': p.prenom ~ ' ' ~ p.nom, 'sn': p.nom, 'mail': p.mail,
+                            'mission': p.mission,
+                            'expire': (p.expiration | string) < personnel_maintenant[:10]}) -%}
+  {%- endfor -%}
+  {{ out }}
+openldap_groups: >-
+  {%- set out = [] -%}
+  {%- for mission, groupes in regles.missions.items() -%}
+  {%-   for g in groupes -%}
+  {%-     set _ = out.append({'cn': g, 'members': openldap_prestataires | rejectattr('expire')
+                              | selectattr('mission', 'eq', mission) | map(attribute='uid') | list}) -%}
+  {%-   endfor -%}
+  {%- endfor -%}
+  {{ out }}

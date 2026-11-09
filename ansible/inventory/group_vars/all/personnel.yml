@@ -1,0 +1,62 @@
+---
+# MC13 : LE fichier des RH. Une ligne par personne ; personne ne crée de compte à la main.
+# Toute modification passe par une pull request, relue et fusionnée par les RH (CODEOWNERS).
+#
+#   id        prénom.nom, en minuscules, sans accents ni espaces (Hélène Lefèvre → helene.lefevre).
+#             Homonyme : un chiffre à la fin (alice.martin2). 20 caractères au plus (sAMAccountName).
+#             Ne change jamais, même au mariage : c'est la clé du compte.
+#   service   compta, direction, rh, it, dev, exploitation (regles.yml dit ce que chacun ouvre)
+#   site      lille ou dunkerque
+#   arrivee   AAAA-MM-JJ : compte créé tout de suite, mais actif à partir de ce jour
+#   depart    AAAA-MM-JJTHH:MM (sans heure : 18:00) : désactivé à cette heure-là. JAMAIS supprimer
+#             la ligne : la personne doit rester désactivée, et l'historique Git dit qui a validé
+#   admin     true pour l'IT : un second compte adm-prénom pour administrer
+#
+# Prestataires (type: prestataire) : annuaire OpenLDAP, pas l'AD ; `expiration` = fin de mission.
+personnel:
+  - id: test2.test2
+    prenom: Test2
+    nom: Test2
+    service: it
+    site: lille
+    admin: true
+  - id: test.test
+    prenom: Test
+    nom: Test
+    service: direction
+    site: dunkerque
+  - id: alice.martin
+    prenom: Alice
+    nom: Martin
+    service: compta
+    site: lille
+  - id: bob.leroy
+    prenom: Bob
+    nom: Leroy
+    service: dev
+    site: dunkerque
+  - id: paul.durand
+    prenom: Paul
+    nom: Durand
+    service: exploitation
+    site: dunkerque
+  - id: karim.benali
+    prenom: Karim
+    nom: Benali
+    service: dev
+    site: dunkerque
+    arrivee: 2026-11-02
+  - id: chloe.petit
+    prenom: Chloé
+    nom: Petit
+    service: dev
+    site: lille
+    arrivee: 2026-11-02
+
+  - id: jdupont
+    type: prestataire
+    prenom: Jean
+    nom: Dupont
+    mail: jean.dupont@presta-trackr.example
+    mission: trackr
+    expiration: 2027-01-31

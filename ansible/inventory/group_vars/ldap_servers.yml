@@ -5,15 +5,7 @@ openldap_domain: loginord.internal
 openldap_organization: LogiNord
 openldap_admin_password: "{{ vault_ldap }}"
 
-# Prestataires : la mission dure 3 mois renouvelables, l'accès se limite à TrackR et web01
-openldap_prestataires:
-  - uid: jdupont
-    cn: Jean Dupont
-    sn: Dupont
-    mail: jean.dupont@presta-trackr.example
-openldap_groups:
-  - cn: presta-trackr
-    members: [jdupont]
+# Prestataires et groupes : calculés depuis personnel.yml (MC13, group_vars/all/regles.yml)
 
 # Les machines qui doivent faire confiance au certificat autosigné
 openldap_clients: "{{ groups['ad_members'] + groups['ldap_servers'] }}"

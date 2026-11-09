@@ -1,0 +1,35 @@
+---
+# Vérifications MC13 : ansible-playbook playbooks/verif_personnel.yml
+# Ce que personnel.yml demande, et ce que l'AD contient vraiment ; puis la décision de SSSD.
+- name: Le personnel vu par l'AD
+  hosts: "{{ groups['domain_controllers'] | first }}"
+  gather_facts: false
+  vars_files:
+    - ../vault/secrets.yml
+  tasks:
+    - name: Actif, OU et groupes de chaque compte de personnel.yml
+      ansible.windows.win_powershell:
+        parameters:
+          Noms: "{{ ad_users | map(attribute='name') | list }}"
+          Base: "OU={{ ad_ou_root }},{{ ad_base }}"
+        script: |
+          param([string[]]$Noms, $Base)
+          $Ansible.Changed = $false
+          foreach ($n in $Noms) {
+            $u = Get-ADUser $n -Properties MemberOf, pwdLastSet
+            $ou = ($u.DistinguishedName -split ',', 2)[1].Replace(",$Base", '')
+            $g = @($u.MemberOf | ForEach-Object { ($_ -split ',')[0].Substring(3) }) -join ', '
+            $doit = if ($u.pwdLastSet -eq 0) { ' (mot de passe à changer)' } else { '' }
+            "{0,-14} {1,-7} {2,-32} {3}{4}" -f $n, $(if ($u.Enabled) { 'actif' } else { 'INACTIF' }), $ou, $g, $doit
+          }
+          # Réconciliation : un compte actif de LogiNord absent de personnel.yml ?
+          Get-ADUser -SearchBase $Base -Filter 'Enabled -eq $true' | Where-Object SamAccountName -notin $Noms |
+            ForEach-Object { "HORS FICHIER : $($_.SamAccountName) ($($_.DistinguishedName))" }
+      register: verif_ad
+
+    - name: Résultat
+      ansible.builtin.debug:
+        var: verif_ad.output
+
+- name: La décision de SSSD sur les Debian
+  ansible.builtin.import_playbook: verif_linux_ad.yml
