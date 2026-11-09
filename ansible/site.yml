@@ -42,6 +42,14 @@
       when: inventory_hostname == partages_serveur
       tags: partages
 
+- name: Mises à jour au quotidien (sécurité Debian, téléchargement Windows)
+  hosts: linux:windows:!routers
+  vars_files:
+    - vault/secrets.yml
+  roles:
+    - role: maj_auto
+      tags: maj
+
 - name: Debian membres du domaine (realmd, SSSD, sudo)
   hosts: ad_members
   vars_files:

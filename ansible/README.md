@@ -865,3 +865,54 @@ ansible-playbook site.yml -l domain_controllers --tags annuaire   # l'AD
 ansible-playbook site.yml -l ad_members,ldap_servers              # Debian, OpenLDAP
 ansible-playbook playbooks/verif_personnel.yml                    # AD, réconciliation, SSSD
 ```
+
+## Mises à jour centralisées (MC14)
+
+**Deux niveaux** :
+
+| | Au quotidien (rôle `maj_auto`, tag `maj`) | En campagne (`playbooks/campagne.yml`) |
+|---|---|---|
+| Debian | `unattended-upgrades`, **sécurité seulement** (`Debian-Security`), chaque jour, **jamais de redémarrage** (`Automatic-Reboot "false"`) | toutes les mises à jour (`apt dist-upgrade`), redémarrage si `/var/run/reboot-required` |
+| Windows | Windows Update **télécharge seul, n'installe pas, ne redémarre jamais seul** (`AUOptions` = 3, stratégie locale : les DC ne sont pas dans nos OU) | `win_updates` : sécurité, critiques, cumulatives ; `reboot: true` |
+
+**La campagne du dimanche** (dépôt fermé) : refusée un autre jour, sauf
+`-e campagne_hors_fenetre=true` (test assumé). Par vagues, **une machine à la fois** (`serial: 1`),
+**une erreur arrête tout** (`max_fail_percentage: 0`) :
+
+1. machine de test (`deb01`, `-e campagne_test=…`) ;
+2. Dunkerque, serveurs (db01 : on vérifie ensuite que **TrackR répond**) ;
+3. Dunkerque, DC (win01) ;
+4. Lille, serveurs (ldap01, srv01) ;
+5. Lille, DC (win02).
+
+**Jamais les deux DC ensemble** : chacun a sa vague, et un DC ne part que si un autre DC répond
+(`Get-ADDomain -Server`) ; après son redémarrage, on attend que l'annuaire réponde de nouveau.
+Les vagues sont des motifs d'inventaire (`site_b:!domain_controllers`…) : un nouveau serveur
+trouve sa place tout seul. **Hors campagne : routeurs et openvpn** : ils portent le VPN par lequel
+Ansible joint les VM. Les redémarrer en pleine campagne couperait Ansible de tout le reste. Ils
+se font à la main, en dernier, depuis la console.
+
+**Le rapport pour l'assureur** (`playbooks/rapport_maj.yml`, ne modifie rien) →
+`rapports/maj-AAAA-MM-JJ.html` (template `playbooks/templates/rapport_maj.html.j2`) : pour chaque machine,
+son rôle en clair, son système, son état (« À jour », « N mises à jour en attente, dont N de
+sécurité », « Redémarrage à faire », « Injoignable »), la date de la dernière vraie mise à jour,
+et la politique automatique. Données : `apt-get -s dist-upgrade`, l'historique apt,
+`win_updates` en `state: searched`, `Get-HotFix`. Une machine injoignable n'est **pas cachée** :
+son état n'est pas garanti, et le rapport le dit.
+
+Testé :
+
+| Test | Résultat |
+|---|---|
+| `unattended-upgrade --dry-run -d` sur db01 | origines permises : `bookworm-security` seulement |
+| campagne un lundi | refusée : « Nous sommes lundi … : les camions roulent » |
+| campagne (Debian) avec `-e campagne_hors_fenetre=true` | deb01, puis db01 (TrackR répond), puis ldap01, une à une |
+| `/var/run/reboot-required` présent sur deb01 | redémarrage, attente du retour, marqueur disparu |
+| rapport | 3 Debian à jour en sécurité automatique, 3 Windows en téléchargement automatique, routeurs et openvpn « injoignables » |
+
+```sh
+ansible-playbook site.yml --tags maj                          # le quotidien
+ansible-playbook playbooks/rapport_maj.yml                    # le rapport
+ansible-playbook playbooks/campagne.yml                       # le dimanche
+cat /var/log/unattended-upgrades/unattended-upgrades.log      # sur une Debian : ce qu'il a fait
+```

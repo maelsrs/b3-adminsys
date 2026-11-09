@@ -1,0 +1,10 @@
+---
+# MC14, au quotidien. Le reste attend la campagne du dimanche (playbooks/campagne.yml).
+# Les routeurs Alpine n'ont pas unattended-upgrades : ils sont hors de ce rôle.
+- name: Debian, sécurité automatique
+  ansible.builtin.import_tasks: debian.yml
+  when: ansible_facts.os_family == 'Debian'
+
+- name: Windows, téléchargement automatique, installation le dimanche
+  ansible.builtin.import_tasks: windows.yml
+  when: ansible_facts.os_family == 'Windows'

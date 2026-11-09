@@ -1,0 +1,24 @@
+---
+# Debian : correctifs de sécurité automatiques, chaque jour, sans redémarrage
+- name: Paquet unattended-upgrades
+  ansible.builtin.apt:
+    name: unattended-upgrades
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Sécurité uniquement, jamais de redémarrage automatique
+  ansible.builtin.template:
+    src: 50unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    mode: "0644"
+
+# Les timers apt-daily (liste des paquets) et apt-daily-upgrade (installation) lisent ce fichier
+- name: Chaque jour, mettre à jour la liste puis installer
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      // Géré par Ansible (rôle maj_auto, MC14)
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    mode: "0644"

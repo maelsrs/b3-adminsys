@@ -1,0 +1,17 @@
+// Géré par Ansible (rôle maj_auto, MC14). Remplace le fichier du paquet.
+// Au quotidien : les correctifs de sécurité seulement. Le reste (nouvelles versions, noyau
+// actif après redémarrage) attend la campagne du dimanche (playbooks/campagne.yml).
+Unattended-Upgrade::Origins-Pattern {
+        "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+        "origin=Debian,codename=${distro_codename},label=Debian-Security";
+};
+
+// Jamais de redémarrage surprise : un serveur qui redémarre en pleine journée arrête les camions
+Unattended-Upgrade::Automatic-Reboot "false";
+
+// Une mise à jour interrompue (coupure) est reprise proprement au passage suivant
+Unattended-Upgrade::MinimalSteps "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "false";
+
+// Traces : /var/log/unattended-upgrades/ et le journal système
+Unattended-Upgrade::SyslogEnable "true";

@@ -32,9 +32,9 @@ seulement si le jury creuse (voir le README, sections « Points à expliquer à 
 | « On pense ouvrir un troisième site » | Les sites sont une **liste** dans le code : OU, sous-réseaux, DHCP, liens AD se génèrent | Montrer `ad_sites` dans l'inventaire |
 | « Budget serré, aucun arrêt, des résultats vite » | Logiciels libres, clones liés Proxmox (un disque ne stocke que ses différences), déploiement par morceaux (`--tags`, `-l`) sans arrêter le reste | — |
 | « Ce sont les RH qui décident » | `personnel.yml` : les RH le modifient par pull request, et CODEOWNERS rend leur validation obligatoire. Git garde qui a demandé, qui a validé, quand | `git log -p inventory/group_vars/all/personnel.yml` ; `verif_personnel.yml` |
+| « L'assureur veut la preuve que tout est à jour » | Correctifs de sécurité **chaque jour** (Linux), campagne **le dimanche** machine par machine, jamais les deux DC ensemble ; un **rapport daté** lisible sans être informaticien | `rapports/maj-….html` ; une campagne lancée un lundi est refusée |
 
-**À venir (le dire franchement)** : preuve des mises
-à jour pour l'assureur (MC14), alerte quand TrackR tombe (MC15).
+**À venir (le dire franchement)** : alerte quand TrackR tombe (MC15).
 
 ## 3. Les images pour un non-informaticien
 

@@ -1,0 +1,33 @@
+---
+# Un DC ne part que si un autre DC répond : sinon plus personne ne s'authentifie
+- name: Un autre DC répond avant d'arrêter celui-ci
+  ansible.windows.win_powershell:
+    parameters:
+      Autres: "{{ groups['domain_controllers'] | reject('eq', inventory_hostname) | list }}"
+    script: |
+      param([string[]]$Autres)
+      $Ansible.Changed = $false
+      $ok = @($Autres | Where-Object { try { Get-ADDomain -Server $_ | Out-Null; $true } catch { $false } })
+      if (-not $ok) { throw "Aucun autre DC ne répond ($($Autres -join ', ')) : campagne arrêtée" }
+      "Relève assurée par : $($ok -join ', ')"
+  when: inventory_hostname in groups['domain_controllers']
+
+# Les mêmes catégories que le rapport ; reboot: true redémarre si besoin et attend le retour
+- name: Mises à jour importantes (sécurité, critiques, cumulatives)
+  ansible.windows.win_updates:
+    category_names: [SecurityUpdates, CriticalUpdates, UpdateRollups]
+    state: installed
+    reboot: true
+    reboot_timeout: 3600
+  register: campagne_win
+
+- name: L'annuaire répond de nouveau sur ce DC
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      Get-ADDomain -Server localhost | Out-Null
+  register: campagne_ad
+  until: campagne_ad is succeeded
+  retries: 30
+  delay: 10
+  when: inventory_hostname in groups['domain_controllers']

@@ -1,0 +1,89 @@
+{#- MC14 : rapport des mises à jour pour l'assureur (playbooks/rapport_maj.yml) -#}
+{%- set jours = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'] -%}
+{%- macro date_fr(d) -%}
+{%- if d -%}{%- set t = d | to_datetime('%Y-%m-%d') -%}{{ jours[t.weekday()] }} {{ t.strftime('%d/%m/%Y') }}{%- else -%}inconnue{%- endif -%}
+{%- endmacro -%}
+{%- set hotes = groups['all'] | sort -%}
+{%- set lignes = [] -%}
+{%- for h in hotes -%}
+{%-   set r = hostvars[h].rapport_maj | default(none) -%}
+{%-   if r is none -%}
+{%-     set etat = ('injoignable', "Injoignable lors du relevé : état inconnu, à vérifier") -%}
+{%-   elif r.redemarrage -%}
+{%-     set etat = ('attention', 'Redémarrage à faire : des correctifs sont installés mais pas encore actifs') -%}
+{%-   elif r.en_attente == 0 -%}
+{%-     set etat = ('ok', 'À jour') -%}
+{%-   elif r.securite -%}
+{%-     set etat = ('attention', r.en_attente ~ ' mise(s) à jour en attente, dont ' ~ r.securite ~ ' de sécurité') -%}
+{%-   else -%}
+{%-     set etat = ('info', r.en_attente ~ ' mise(s) à jour en attente, aucune de sécurité') -%}
+{%-   endif -%}
+{%-   set _ = lignes.append({'h': h, 'r': r, 'etat': etat}) -%}
+{%- endfor -%}
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LogiNord : état des mises à jour au {{ rapport_date }}</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 70rem; padding: 0 1rem;
+         color: #1d232a; background: #fff; line-height: 1.45; }
+  h1 { font-size: 1.5rem; margin-bottom: .2rem; }
+  .sous-titre { color: #5b6672; margin-top: 0; }
+  .resume { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1.5rem 0; }
+  .resume div { border: 1px solid #d6dbe0; border-radius: 6px; padding: .6rem 1rem; min-width: 9rem; }
+  .resume b { display: block; font-size: 1.6rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid #e3e7eb; vertical-align: top; }
+  th { background: #f3f5f7; font-weight: 600; }
+  .ok { color: #17663a; } .attention { color: #9a5b00; } .injoignable { color: #a11d1d; } .info { color: #24557a; }
+  .pastille { font-weight: 600; }
+  .note { color: #5b6672; font-size: .9rem; margin-top: 2rem; }
+  @media print { body { margin: 0; } }
+</style>
+</head>
+<body>
+<h1>LogiNord : état des mises à jour des serveurs</h1>
+<p class="sous-titre">Relevé automatique du {{ date_fr(rapport_date) }} à {{ rapport_heure }}, sur {{ hotes | length }} machines.</p>
+
+<div class="resume">
+  <div><b class="ok">{{ lignes | selectattr('etat.0', 'eq', 'ok') | list | length }}</b>à jour</div>
+  <div><b class="attention">{{ lignes | selectattr('etat.0', 'eq', 'attention') | list | length }}</b>avec une action à faire</div>
+  <div><b class="info">{{ lignes | selectattr('etat.0', 'eq', 'info') | list | length }}</b>mises à jour non urgentes en attente</div>
+  <div><b class="injoignable">{{ lignes | selectattr('etat.0', 'eq', 'injoignable') | list | length }}</b>injoignables</div>
+</div>
+
+<table>
+  <thead>
+    <tr><th>Machine</th><th>Rôle</th><th>Système</th><th>État</th><th>Dernière mise à jour</th><th>Correctifs de sécurité automatiques</th></tr>
+  </thead>
+  <tbody>
+{% for l in lignes %}
+{%   set f = hostvars[l.h].ansible_facts | default({}) %}
+    <tr>
+      <td><b>{{ l.h }}</b></td>
+      <td>{{ rapport_roles[l.h] | default('') }}</td>
+      <td>{{ (f.distribution | default('') ~ ' ' ~ f.distribution_version | default('')) | trim or 'inconnu' }}</td>
+      <td class="{{ l.etat.0 }} pastille">{{ l.etat.1 }}</td>
+      <td>{{ date_fr(l.r.derniere_maj) if l.r else 'inconnue' }}</td>
+      <td>{{ ('téléchargés chaque jour, installés le dimanche' if l.r.auto == 'telechargement'
+              else 'oui, chaque jour' if l.r.auto else 'non : campagne du dimanche') if l.r else '' }}</td>
+    </tr>
+{% endfor %}
+  </tbody>
+</table>
+
+<div class="note">
+  <p><b>Comment nous mettons à jour.</b> Chaque jour, les serveurs Linux installent seuls les correctifs
+  de sécurité, sans redémarrer. Chaque dimanche (dépôt fermé), une campagne installe toutes les
+  mises à jour, machine par machine, dans cet ordre : une machine de test, puis Dunkerque, puis
+  Lille. Les deux annuaires des comptes ne sont jamais arrêtés en même temps : les salariés peuvent
+  toujours se connecter.</p>
+  <p><b>« Redémarrage à faire »</b> : la mise à jour est installée, mais ne protège qu'après le
+  redémarrage, fait lors de la campagne suivante. <b>« Injoignable »</b> : la machine n'a pas pu
+  être interrogée lors de ce relevé ; son état n'est donc pas garanti.</p>
+  <p>Document produit par <code>playbooks/rapport_maj.yml</code> (dépôt LogiNord), sans intervention manuelle.</p>
+</div>
+</body>
+</html>

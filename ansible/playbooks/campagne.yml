@@ -1,0 +1,67 @@
+---
+# MC14 : la campagne du dimanche (dépôt fermé). Toutes les mises à jour, redémarrage si besoin,
+# par vagues et une machine à la fois (serial: 1). Une erreur arrête toute la campagne
+# (max_fail_percentage: 0) : les machines suivantes restent intactes.
+#   ansible-playbook playbooks/campagne.yml
+#   ansible-playbook playbooks/campagne.yml -e campagne_hors_fenetre=true   # test en semaine
+#
+# Ordre : machine de test → Dunkerque (serveurs, puis son DC) → Lille (serveurs, puis son DC).
+# Jamais les deux DC ensemble : chacun a sa vague, et ne part que si l'autre répond.
+# Hors campagne : les routeurs et openvpn. Ils portent le VPN par lequel Ansible joint les VM ;
+# on les met à jour en dernier, à la console (README, MC14).
+- name: Fenêtre de maintenance
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Seulement le dimanche (dépôt fermé), sauf test explicite
+      ansible.builtin.assert:
+        that: now().weekday() == 6 or campagne_hors_fenetre | default(false) | bool
+        fail_msg: >-
+          Nous sommes {{ ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'][now().weekday()] }}
+          {{ now(fmt='%d/%m %H:%M') }} : les camions roulent. La campagne se lance le dimanche
+          (ou -e campagne_hors_fenetre=true pour un test assumé).
+
+- name: Vague 1, machine de test
+  hosts: "{{ campagne_test | default('deb01') }}"
+  serial: 1
+  max_fail_percentage: 0
+  vars_files: [../vault/secrets.yml]
+  tasks:
+    - name: Mettre à jour
+      ansible.builtin.include_tasks: campagne/{{ ansible_facts.os_family | lower }}.yml
+
+- name: Vague 2, Dunkerque, serveurs
+  hosts: site_b:!domain_controllers:!routers:!openvpn:!{{ campagne_test | default('deb01') }}
+  serial: 1
+  max_fail_percentage: 0
+  vars_files: [../vault/secrets.yml]
+  tasks:
+    - name: Mettre à jour
+      ansible.builtin.include_tasks: campagne/{{ ansible_facts.os_family | lower }}.yml
+
+- name: Vague 3, Dunkerque, contrôleur de domaine
+  hosts: site_b:&domain_controllers
+  serial: 1
+  max_fail_percentage: 0
+  vars_files: [../vault/secrets.yml]
+  tasks:
+    - name: Mettre à jour
+      ansible.builtin.include_tasks: campagne/windows.yml
+
+- name: Vague 4, Lille, serveurs
+  hosts: site_a:!domain_controllers:!routers:!openvpn:!{{ campagne_test | default('deb01') }}
+  serial: 1
+  max_fail_percentage: 0
+  vars_files: [../vault/secrets.yml]
+  tasks:
+    - name: Mettre à jour
+      ansible.builtin.include_tasks: campagne/{{ ansible_facts.os_family | lower }}.yml
+
+- name: Vague 5, Lille, contrôleur de domaine
+  hosts: site_a:&domain_controllers
+  serial: 1
+  max_fail_percentage: 0
+  vars_files: [../vault/secrets.yml]
+  tasks:
+    - name: Mettre à jour
+      ansible.builtin.include_tasks: campagne/windows.yml

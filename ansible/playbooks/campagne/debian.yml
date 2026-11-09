@@ -1,0 +1,29 @@
+---
+- name: Toutes les mises à jour
+  ansible.builtin.apt:
+    upgrade: dist
+    update_cache: true
+  become: true
+
+# Debian dit elle-même si un redémarrage est nécessaire (noyau, libc…)
+- name: Redémarrage nécessaire ?
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: campagne_reboot
+
+- name: Redémarrer, puis attendre le retour de la machine
+  ansible.builtin.reboot:
+    msg: Campagne de mises à jour (Ansible)
+    reboot_timeout: 600
+  become: true
+  when: campagne_reboot.stat.exists
+
+# Le service rendu, pas seulement la machine : TrackR répond-il après le redémarrage ?
+- name: TrackR répond
+  ansible.builtin.uri:
+    url: http://127.0.0.1:{{ trackr_port | default(8080) }}/health
+  register: campagne_trackr
+  until: campagne_trackr.status == 200
+  retries: 30
+  delay: 2
+  when: inventory_hostname in groups['db_servers']

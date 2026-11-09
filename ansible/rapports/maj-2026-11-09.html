@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LogiNord : état des mises à jour au 2026-11-09</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 70rem; padding: 0 1rem;
+         color: #1d232a; background: #fff; line-height: 1.45; }
+  h1 { font-size: 1.5rem; margin-bottom: .2rem; }
+  .sous-titre { color: #5b6672; margin-top: 0; }
+  .resume { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1.5rem 0; }
+  .resume div { border: 1px solid #d6dbe0; border-radius: 6px; padding: .6rem 1rem; min-width: 9rem; }
+  .resume b { display: block; font-size: 1.6rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid #e3e7eb; vertical-align: top; }
+  th { background: #f3f5f7; font-weight: 600; }
+  .ok { color: #17663a; } .attention { color: #9a5b00; } .injoignable { color: #a11d1d; } .info { color: #24557a; }
+  .pastille { font-weight: 600; }
+  .note { color: #5b6672; font-size: .9rem; margin-top: 2rem; }
+  @media print { body { margin: 0; } }
+</style>
+</head>
+<body>
+<h1>LogiNord : état des mises à jour des serveurs</h1>
+<p class="sous-titre">Relevé automatique du lun. 09/11/2026 à 16:27, sur 9 machines.</p>
+
+<div class="resume">
+  <div><b class="ok">0</b>à jour</div>
+  <div><b class="attention">1</b>avec une action à faire</div>
+  <div><b class="info">0</b>mises à jour non urgentes en attente</div>
+  <div><b class="injoignable">8</b>injoignables</div>
+</div>
+
+<table>
+  <thead>
+    <tr><th>Machine</th><th>Rôle</th><th>Système</th><th>État</th><th>Dernière mise à jour</th><th>Correctifs de sécurité automatiques</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>db01</b></td>
+      <td>Base de données et application TrackR, Dunkerque</td>
+      <td>Debian 12.15</td>
+      <td class="injoignable pastille">Injoignable lors du relevé : état inconnu, à vérifier</td>
+      <td>inconnue</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td><b>deb01</b></td>
+      <td>Serveur Linux d'administration, Lille</td>
+      <td>Debian 12.15</td>
+      <td class="injoignable pastille">Injoignable lors du relevé : état inconnu, à vérifier</td>
+      <td>inconnue</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td><b>ldap01</b></td>
+      <td>Annuaire des prestataires, Lille</td>
+      <td>Debian 12.15</td>
+      <td class="injoignable pastille">Injoignable lors du relevé : état inconnu, à vérifier</td>
+      <td>inconnue</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td><b>openvpn</b></td>
+      <td>Accès à distance des informaticiens (VPN), Lille</td>
+      <td>inconnu</td>
+      <td class="injoignable pastille">Injoignable lors du relevé : état inconnu, à vérifier</td>
+      <td>inconnue</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td><b>rtr-a</b></td>
+      <td>Routeur et liaison sécurisée, Lille</td>
+      <td>inconnu</td>
+      <td class="injoignable pastille">Injoignable lors du relevé : état inconnu, à vérifier</td>
+      <td>inconnue</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td><b>rtr-b</b></td>
+      <td>Routeur et liaison sécurisée, Dunkerque</td>
+      <td>inconnu</td>
+      <td class="injoignable pastille">Injoignable lors du relevé : état inconnu, à vérifier</td>
+      <td>inconnue</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td><b>srv01</b></td>
+      <td>Partages de fichiers des services, Lille</td>
+      <td>Microsoft Windows Server 2025 Standard Evaluation 10.0.26100.0</td>
+      <td class="attention pastille">2 mise(s) à jour en attente, dont 2 de sécurité</td>
+      <td>mer. 14/01/2026</td>
+      <td>téléchargés chaque jour, installés le dimanche</td>
+    </tr>
+    <tr>
+      <td><b>win01</b></td>
+      <td>Annuaire des comptes, Dunkerque (contrôleur de domaine)</td>
+      <td>Microsoft Windows Server 2025 Standard Evaluation 10.0.26100.0</td>
+      <td class="injoignable pastille">Injoignable lors du relevé : état inconnu, à vérifier</td>
+      <td>inconnue</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td><b>win02</b></td>
+      <td>Annuaire des comptes, Lille (contrôleur de domaine principal)</td>
+      <td>Microsoft Windows Server 2025 Standard Evaluation 10.0.26100.0</td>
+      <td class="injoignable pastille">Injoignable lors du relevé : état inconnu, à vérifier</td>
+      <td>inconnue</td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <p><b>Comment nous mettons à jour.</b> Chaque jour, les serveurs Linux installent seuls les correctifs
+  de sécurité, sans redémarrer. Chaque dimanche (dépôt fermé), une campagne installe toutes les
+  mises à jour, machine par machine, dans cet ordre : une machine de test, puis Dunkerque, puis
+  Lille. Les deux annuaires des comptes ne sont jamais arrêtés en même temps : les salariés peuvent
+  toujours se connecter.</p>
+  <p><b>« Redémarrage à faire »</b> : la mise à jour est installée, mais ne protège qu'après le
+  redémarrage, fait lors de la campagne suivante. <b>« Injoignable »</b> : la machine n'a pas pu
+  être interrogée lors de ce relevé ; son état n'est donc pas garanti.</p>
+  <p>Document produit par <code>playbooks/rapport_maj.yml</code> (dépôt LogiNord), sans intervention manuelle.</p>
+</div>
+</body>
+</html>
