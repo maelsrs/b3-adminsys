@@ -18,6 +18,7 @@ graph TD
   subgraph site_b["Site B — Dunkerque (10.1.20.0/24)"]
     rtr_b["rtr-b\neth1 10.1.20.1/24\neth2 192.0.2.2/24\nwg0 10.255.0.2/30"]
     win01["win01 — DC Dunkerque\n10.1.20.30\nWindows Server"]
+    db01["db01 — PostgreSQL TrackR\n10.1.20.21\nRAID 1 + LVM"]
   end
 
   subgraph wan["WAN (192.0.2.0/24)"]
@@ -29,6 +30,7 @@ graph TD
   srv01 -->|"GW 10.1.10.1"| rtr_a
   win02 -->|"GW 10.1.10.1"| rtr_a
   win01 -->|"GW 10.1.20.1"| rtr_b
+  db01 -->|"10.1.0.0/16 via 10.1.20.1"| rtr_b
 
   rtr_a -. "eth0 (mgmt Ansible)\n192.168.0.40" .-> ctrl
   rtr_b -. "eth0 (mgmt Ansible)\n192.168.0.49" .-> ctrl
@@ -143,6 +145,7 @@ Le rôle ne change pas.
 | win02 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ racine + GPO | — | — | — | — |
 | win01 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ réplica | — | — | — | — |
 | srv01 | ✅ | — | — | — | ✅ (OpenSSH) | — | — | ✅ | ✅ | — |
+| db01 | ✅ | — | — | — | ✅ | — | — | — | — | — (stockage) |
 | rtr-a | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — |
 | rtr-b | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — |
 
@@ -598,3 +601,66 @@ Get-NetFirewallProfile -PolicyStore ActiveStore   # entrant : Block, imposé par
 
 Côté DC : `Get-GPInheritance -Target "OU=Serveurs,OU=Lille,OU=LogiNord,DC=loginord,DC=internal"`,
 et le journal `Microsoft-Windows-GroupPolicy/Operational` pour les erreurs.
+
+## Stockage Linux : RAID 1, LVM, quotas (MC09)
+
+**db01** (VM 121, clone lié de `template-debian`, à Dunkerque : la base de TrackR doit tourner
+lien coupé) : deux disques de données de 5 Go. Rôle `stockage`, variables dans
+`group_vars/db_servers.yml`. Les Debian sont désormais jointes par leur IP LAN via le VPN
+(`inventory/hosts.yml`) : les IP de gestion DHCP changent au fil des baux.
+
+Disques → **RAID 1** (`md0`, la redondance) → **LVM** (`vg_data`, la souplesse) → système de
+fichiers → montage :
+
+| Volume | Taille | FS | Montage | Pour |
+|---|---|---|---|---|
+| lv_pgsql | 2 Go | ext4 | /var/lib/postgresql | données PostgreSQL |
+| lv_depot | 1 Go | XFS (`prjquota`) | /srv/depot | dépôt des développeurs, quota par projet |
+
+~2 Go restent libres dans `vg_data` pour agrandir à chaud : `lvextend -r -L +1G vg_data/lv_pgsql`
+(`-r` agrandit le système de fichiers en même temps).
+
+1. **RAID 1** : `mdadm --create` (pas de module : `creates: /dev/md0`), disques désignés par
+   `/dev/disk/by-id/` (`/dev/sdb` peut changer de nom). La ligne `ARRAY` va dans
+   `/etc/mdadm/mdadm.conf`, puis `update-initramfs -u` : sans ça, le RAID remonte en `md127`.
+2. **LVM** : `lvg`, `lvol` (`shrink: false` : ne jamais réduire par erreur), `filesystem`.
+3. **Montage par UUID** avec `nofail` (`mount state: mounted` écrit fstab et monte) : un disque
+   absent ne bloque plus le démarrage. Vérifier fstab avant de redémarrer : `findmnt --verify`.
+4. **PostgreSQL après le montage** : sinon ses données atterrissent sur le disque système, puis
+   sont masquées par le montage. systemd démarre `postgresql@15-main` après
+   `var-lib-postgresql.mount`.
+5. **Quota par projet** (XFS) : `/srv/depot/devs` limité à 200 Mo, quel que soit l'utilisateur
+   qui écrit (`/etc/projects`, `/etc/projid`, `xfs_quota limit -p bhard=200m`).
+
+**Testé** :
+
+| Test | Résultat |
+|---|---|
+| `mdadm --detail /dev/md0` | `State : clean`, 2 disques actifs |
+| `dd` de 250 Mo dans `/srv/depot/devs` | coupé à 200 Mo : « Aucun espace disponible » |
+| `--fail` puis `--remove` d'un disque | `[U_]`, `clean, degraded` : les 1000 lignes PostgreSQL restent lisibles |
+| `--add` du disque | reconstruction, puis `[UU]`, `clean` |
+| redémarrage | `md0` (pas `md127`), volumes montés, PostgreSQL actif, données et quota intacts |
+
+**Points à expliquer à l'oral** :
+
+- **Le RAID n'est pas une sauvegarde** : une suppression ou un chiffrement par rançongiciel
+  touche les deux disques à la fois. Il protège du matériel, pas des erreurs.
+- **Être prévenu** : un RAID dégradé continue de servir sans bruit ; sans alerte, on ne le
+  découvre qu'à la panne du second disque (supervision, MC15).
+- **ext4 ou XFS** : les deux s'agrandissent à chaud ; seul ext4 se réduit (démonté). XFS a le
+  quota par projet, d'où le dépôt en XFS.
+
+```sh
+ansible-playbook site.yml -l db01 --tags stockage   # changed=0 au 2e passage
+```
+
+```sh
+# sur db01 : simuler la panne
+D=$(readlink -f /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi2)
+sudo mdadm /dev/md0 --fail $D && sudo mdadm /dev/md0 --remove $D
+cat /proc/mdstat                         # [U_]
+sudo mdadm /dev/md0 --add $D
+watch cat /proc/mdstat                   # reconstruction, puis [UU]
+sudo xfs_quota -x -c 'report -p -h' /srv/depot
+```

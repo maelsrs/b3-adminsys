@@ -1,0 +1,3 @@
+# Sans mdadm.conf dans l'initramfs, le RAID remonte en md127 au démarrage, ou pas du tout
+- name: Mettre à jour l'initramfs
+  ansible.builtin.command: update-initramfs -u

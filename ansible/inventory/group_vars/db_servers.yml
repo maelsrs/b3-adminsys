@@ -1,0 +1,25 @@
+# Disques → RAID 1 → LVM → système de fichiers → montage (MC09)
+
+# Les disques par leur identifiant stable (/dev/sdb peut changer de nom au démarrage)
+stockage_raid_disks:
+  - /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
+  - /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi2
+
+# ~5 Go de RAID : on n'alloue pas tout, pour pouvoir agrandir à chaud (lvextend -r)
+stockage_lvs:
+  - name: lv_pgsql
+    size: 2g
+    fstype: ext4
+    mount: /var/lib/postgresql
+  # Dépôt des développeurs : XFS pour le quota par projet (un répertoire)
+  - name: lv_depot
+    size: 1g
+    fstype: xfs
+    mount: /srv/depot
+    opts: prjquota
+
+stockage_projets:
+  - name: devs
+    id: 10
+    path: /srv/depot/devs
+    hard: 200m

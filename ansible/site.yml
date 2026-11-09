@@ -55,3 +55,18 @@
     - vault/secrets.yml
   roles:
     - openldap
+
+# Avant PostgreSQL : le volume doit être monté sur /var/lib/postgresql avant l'installation
+- name: Stockage RAID 1 + LVM, puis PostgreSQL
+  hosts: db_servers
+  vars_files:
+    - vault/secrets.yml
+  roles:
+    - role: stockage
+      tags: stockage
+  tasks:
+    - name: PostgreSQL
+      ansible.builtin.apt:
+        name: postgresql
+        state: present
+      tags: stockage

@@ -1,0 +1,100 @@
+- name: Outils RAID, LVM, XFS, quotas
+  ansible.builtin.apt:
+    name: [mdadm, lvm2, xfsprogs, quota]
+    state: present
+
+# Pas de module Ansible pour mdadm : creates rend la commande idempotente
+- name: RAID 1
+  ansible.builtin.command:
+    argv: "{{ ['mdadm', '--create', stockage_raid_device, '--run', '--level=1', '--metadata=1.2',
+               '--raid-devices=' ~ (stockage_raid_disks | length)] + stockage_raid_disks }}"
+    creates: "{{ stockage_raid_device }}"
+
+- name: Lire la définition du RAID
+  ansible.builtin.command: mdadm --detail --brief {{ stockage_raid_device }}
+  register: stockage_raid_scan
+  changed_when: false
+
+# Le nom est fixé ici : sans cette ligne, md0 redevient md127 au démarrage
+- name: Déclarer le RAID dans mdadm.conf
+  ansible.builtin.lineinfile:
+    path: /etc/mdadm/mdadm.conf
+    regexp: "^ARRAY {{ stockage_raid_device }} "
+    line: "{{ stockage_raid_scan.stdout | regex_replace('\\s+', ' ') | trim }}"
+  notify: Mettre à jour l'initramfs
+
+- name: Groupe de volumes sur le RAID
+  community.general.lvg:
+    vg: "{{ stockage_vg }}"
+    pvs: "{{ stockage_raid_device }}"
+
+- name: Volumes logiques
+  community.general.lvol:
+    vg: "{{ stockage_vg }}"
+    lv: "{{ item.name }}"
+    size: "{{ item.size }}"
+    shrink: false
+  loop: "{{ stockage_lvs }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Systèmes de fichiers
+  community.general.filesystem:
+    dev: /dev/{{ stockage_vg }}/{{ item.name }}
+    fstype: "{{ item.fstype }}"
+  loop: "{{ stockage_lvs }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.fstype }})"
+
+- name: UUID des volumes
+  ansible.builtin.command: blkid -s UUID -o value /dev/{{ stockage_vg }}/{{ item.name }}
+  loop: "{{ stockage_lvs }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: stockage_uuids
+  changed_when: false
+
+# fstab par UUID, et nofail : un volume absent ne bloque plus le démarrage
+- name: Monter par UUID (fstab + montage immédiat)
+  ansible.posix.mount:
+    path: "{{ item.item.mount }}"
+    src: UUID={{ item.stdout }}
+    fstype: "{{ item.item.fstype }}"
+    opts: "{{ (['defaults', 'nofail'] + ([item.item.opts] if item.item.opts is defined else [])) | join(',') }}"
+    state: mounted
+  loop: "{{ stockage_uuids.results }}"
+  loop_control:
+    label: "{{ item.item.mount }}"
+
+# Quota par projet (XFS) : une limite sur un répertoire, quel que soit l'utilisateur qui écrit
+- name: Répertoires des projets
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "0775"
+  loop: "{{ stockage_projets }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+# /etc/projects (id:répertoire), /etc/projid (nom:id), puis la limite : lire, comparer, agir
+- name: Quota de chaque projet
+  ansible.builtin.shell: |
+    set -e
+    mnt=$(findmnt -n -o TARGET --target {{ item.path }})
+    # Colonnes du rapport : #id, utilisé, souple, strict (Ko), …
+    current=$(xfs_quota -x -c "report -p -n -N" "$mnt" | awk '$1 == "#{{ item.id }}" {print $4}')
+    grep -qx '{{ item.id }}:{{ item.path }}' /etc/projects || echo '{{ item.id }}:{{ item.path }}' >> /etc/projects
+    grep -qx '{{ item.name }}:{{ item.id }}' /etc/projid || echo '{{ item.name }}:{{ item.id }}' >> /etc/projid
+    want=$(numfmt --from=iec {{ item.hard | upper }})
+    if [ "$(( ${current:-0} * 1024 ))" != "$want" ]; then
+      xfs_quota -x -c "project -s {{ item.name }}" "$mnt" >/dev/null
+      xfs_quota -x -c "limit -p bhard={{ item.hard }} {{ item.name }}" "$mnt"
+      echo CHANGED
+    fi
+  args:
+    executable: /bin/bash
+  register: stockage_quota
+  changed_when: "'CHANGED' in stockage_quota.stdout"
+  loop: "{{ stockage_projets }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.hard }})"
