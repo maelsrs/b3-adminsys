@@ -1,0 +1,59 @@
+# Géré par Ansible (rôle trackr)
+[Unit]
+Description=TrackR - suivi des livraisons
+After=network-online.target postgresql.service
+Wants=network-online.target
+# Pas plus de 5 redémarrages en 2 min : au-delà, systemd abandonne (systemctl reset-failed)
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+User=trackr
+Group=trackr
+EnvironmentFile=/etc/trackr/trackr.env
+ExecStart=/opt/trackr/trackr
+Restart=on-failure
+RestartSec=5
+
+# Le seul dossier inscriptible : /var/lib/trackr (StateDirectory le crée, au bon propriétaire)
+StateDirectory=trackr
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+UMask=0077
+
+# Ni capacités ni changement d'identité : un service web n'en a pas besoin
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RemoveIPC=yes
+PrivateUsers=yes
+# Réseau : socket Unix (PostgreSQL) et IPv4/IPv6, rien d'autre ; écoute pour le LAN seulement
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost 10.1.0.0/16
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+
+# Une fuite mémoire ou une boucle ne fait plus tomber la machine
+MemoryMax=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

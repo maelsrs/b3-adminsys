@@ -1,0 +1,12 @@
+# Géré par Ansible (rôle trackr). Le client accepte de perdre une heure au plus
+[Unit]
+Description=Sauvegarde horaire de la base TrackR
+
+[Timer]
+OnCalendar=hourly
+# Machine éteinte à l'heure prévue : la sauvegarde manquée est faite au démarrage
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,121 @@
+# MC11 : TrackR en service systemd durci, base sauvegardée toutes les heures par un timer.
+# TrackR tourne à côté de sa base, sur db01 (Dunkerque) : rien ne dépend du lien inter-sites.
+- name: Paquets (pilote PostgreSQL de Python ; acl pour que become_user postgres/trackr marche)
+  ansible.builtin.apt:
+    name: [python3-psycopg2, acl]
+    state: present
+
+# Journaux conservés au redémarrage : sans ça, l'historique d'un plantage disparaît avec lui
+- name: Dossier des réglages journald
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    mode: "0755"
+
+- name: journald persistant
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/persistent.conf
+    content: |
+      # Géré par Ansible (rôle trackr)
+      [Journal]
+      Storage=persistent
+    mode: "0644"
+  notify: Relancer journald
+
+- name: Compte système trackr, sans shell ni dossier personnel
+  ansible.builtin.user:
+    name: trackr
+    system: true
+    shell: /usr/sbin/nologin
+    home: /var/lib/trackr
+    create_home: false
+
+# Authentification « peer » par socket Unix : le compte système trackr = le rôle trackr
+- name: Rôle PostgreSQL trackr
+  community.postgresql.postgresql_user:
+    name: trackr
+  become: true
+  become_user: postgres
+
+- name: Base trackr
+  community.postgresql.postgresql_db:
+    name: "{{ trackr_db }}"
+    owner: trackr
+  become: true
+  become_user: postgres
+
+- name: Table des livraisons
+  community.postgresql.postgresql_query:
+    db: "{{ trackr_db }}"
+    login_user: trackr
+    query: >-
+      CREATE TABLE IF NOT EXISTS livraisons (
+        id serial PRIMARY KEY, camion text NOT NULL, destination text NOT NULL,
+        cree_le timestamptz NOT NULL DEFAULT now())
+  become: true
+  become_user: trackr
+  changed_when: false
+
+- name: Programme TrackR
+  ansible.builtin.copy:
+    src: trackr
+    dest: /opt/trackr/
+    mode: "0755"
+  notify: Relancer TrackR
+
+- name: Dossier de configuration
+  ansible.builtin.file:
+    path: /etc/trackr
+    state: directory
+    mode: "0755"
+
+- name: Configuration TrackR
+  ansible.builtin.template:
+    src: trackr.env.j2
+    dest: /etc/trackr/trackr.env
+    mode: "0644"
+  notify: Relancer TrackR
+
+- name: Unité trackr.service
+  ansible.builtin.template:
+    src: trackr.service.j2
+    dest: /etc/systemd/system/trackr.service
+    mode: "0644"
+  notify: Relancer TrackR
+
+- name: TrackR démarré et lancé au boot
+  ansible.builtin.systemd_service:
+    name: trackr
+    state: started
+    enabled: true
+    daemon_reload: true
+
+# Sauvegarde : le timer dit quand, le service dit quoi
+- name: Dossier des sauvegardes
+  ansible.builtin.file:
+    path: "{{ trackr_backup_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0750"
+
+- name: Script de sauvegarde
+  ansible.builtin.copy:
+    src: pg-backup
+    dest: /usr/local/bin/pg-backup
+    mode: "0755"
+
+- name: Unités de sauvegarde
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: /etc/systemd/system/{{ item }}
+    mode: "0644"
+  loop: [pg-backup.service, pg-backup.timer]
+  register: trackr_backup_units
+
+- name: Timer de sauvegarde actif
+  ansible.builtin.systemd_service:
+    name: pg-backup.timer
+    state: started
+    enabled: true
+    daemon_reload: "{{ trackr_backup_units is changed }}"

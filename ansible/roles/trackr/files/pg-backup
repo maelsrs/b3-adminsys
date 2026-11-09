@@ -1,0 +1,9 @@
+#!/bin/bash
+# Sauvegarde horaire de la base TrackR (lancée par pg-backup.timer, en postgres)
+set -euo pipefail
+dir=${BACKUP_DIR:-/var/backups/pg}
+f=$dir/trackr-$(date +%F-%H%M).dump
+pg_dump -Fc trackr > "$f.part"
+mv "$f.part" "$f"            # un .dump présent est toujours complet
+find "$dir" -name 'trackr-*.dump' -mtime +"${BACKUP_DAYS:-7}" -delete
+echo "sauvegarde : $f ($(stat -c %s "$f") octets)"

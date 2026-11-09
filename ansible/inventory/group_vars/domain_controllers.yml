@@ -93,8 +93,9 @@ ad_dns_reverse_zones:
   - 10.1.10.in-addr.arpa
   - 20.1.10.in-addr.arpa
 ad_dns_records:
+  # TrackR tourne à côté de sa base (MC11) : un alias, pour pouvoir le déplacer sans toucher aux clients
   - name: trackr
-    ip: 10.1.20.20
+    cname: db01
   # Hors domaine : ne s'inscrit pas seul comme deb01 (SSSD)
   - name: ldap01
     ip: 10.1.10.21

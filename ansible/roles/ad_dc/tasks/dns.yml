@@ -15,7 +15,7 @@
     name: "{{ item.name }}"
     type: A
     value: "{{ item.ip }}"
-  loop: "{{ ad_dns_records }}"
+  loop: "{{ ad_dns_records | selectattr('ip', 'defined') }}"
   loop_control:
     label: "{{ item.name }}"
   when: inventory_hostname == ad_forest_root
@@ -27,9 +27,20 @@
     name: "{{ item.ip.split('.')[3] }}"
     type: PTR
     value: "{{ item.name }}.{{ ad_domain }}"
-  loop: "{{ ad_dns_records }}"
+  loop: "{{ ad_dns_records | selectattr('ip', 'defined') }}"
   loop_control:
     label: "{{ item.name }}"
+  when: inventory_hostname == ad_forest_root
+
+- name: Alias (CNAME)
+  ansible.windows.win_dns_record:
+    zone: "{{ ad_domain }}"
+    name: "{{ item.name }}"
+    type: CNAME
+    value: "{{ item.cname }}.{{ ad_domain }}"
+  loop: "{{ ad_dns_records | selectattr('cname', 'defined') }}"
+  loop_control:
+    label: "{{ item.name }} -> {{ item.cname }}"
   when: inventory_hostname == ad_forest_root
 
 # Le serveur DNS publie une IP pour chaque carte où il écoute : la carte de gestion y était

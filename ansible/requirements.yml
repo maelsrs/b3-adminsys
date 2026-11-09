@@ -4,4 +4,5 @@ collections:
   - name: community.windows
   - name: community.general
   - name: ansible.posix
+  - name: community.postgresql
 roles: []

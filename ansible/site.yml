@@ -70,3 +70,9 @@
         name: postgresql
         state: present
       tags: stockage
+
+- name: TrackR en service systemd, sauvegarde horaire de sa base
+  hosts: db_servers
+  roles:
+    - role: trackr
+      tags: trackr

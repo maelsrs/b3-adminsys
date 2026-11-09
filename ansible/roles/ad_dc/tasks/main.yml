@@ -27,6 +27,7 @@
 
 - name: DNS
   ansible.builtin.import_tasks: dns.yml
+  tags: dns
 
 - name: DHCP
   ansible.builtin.import_tasks: dhcp.yml

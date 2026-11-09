@@ -1,0 +1,4 @@
+trackr_port: 8080
+trackr_db: trackr
+trackr_backup_dir: /var/backups/pg
+trackr_backup_days: 7

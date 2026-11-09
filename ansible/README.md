@@ -145,7 +145,7 @@ Le rôle ne change pas.
 | win02 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ racine + GPO | — | — | — | — |
 | win01 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ réplica | — | — | — | — |
 | srv01 | ✅ | — | — | — | ✅ (OpenSSH) | — | — | ✅ | ✅ | — |
-| db01 | ✅ | — | — | — | ✅ | — | — | — | — | — (stockage) |
+| db01 | ✅ | — | — | — | ✅ | — | — | — | — | — (stockage, trackr) |
 | rtr-a | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — |
 | rtr-b | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — |
 
@@ -700,4 +700,43 @@ disques, un rançongiciel qui chiffre le volume l'emporte aussi.
 ```sh
 ansible-playbook site.yml -l srv01 --tags partages   # changed=0 au 2e passage
 vssadmin list shadows /for=D:                        # sur srv01 : les clichés
+```
+
+## Services et planification (MC11)
+
+Rôle `trackr` sur `db_servers` (db01). Le vrai TrackR arrivera plus tard : en attendant, une
+**maquette** Python (`roles/trackr/files/trackr`, HTTP sur :8080, table `livraisons`). L'unité,
+la sauvegarde et les tests restent valables quand on remplacera le programme.
+
+- **TrackR tourne à côté de sa base**, à Dunkerque : lien coupé, les camions continuent.
+  DNS : `trackr` est un **CNAME** vers `db01` (un alias se déplace sans toucher aux clients).
+- **Compte dédié** `trackr` (système, sans shell) = rôle PostgreSQL `trackr` en authentification
+  *peer* par socket Unix : **aucun mot de passe** stocké.
+- **Unité durcie** (`trackr.service`) : `Restart=on-failure` + `RestartSec=5`,
+  `StartLimitBurst=5` en 2 min ; `ProtectSystem=strict` avec un seul dossier inscriptible
+  (`StateDirectory=trackr` → `/var/lib/trackr`) ; pas de capacités, filtre d'appels système,
+  réseau limité à `localhost` et `10.1.0.0/16` ; `MemoryMax=512M`, `CPUQuota=50%`.
+  **Score `systemd-analyze security` : 1.0** (0 = isolé au maximum, 10 = rien).
+- **Sauvegarde** : `pg-backup.timer` (horaire, `Persistent=true`, délai aléatoire de 2 min)
+  lance `pg-backup.service` (oneshot, en `postgres`) → `/var/backups/pg/trackr-AAAA-MM-JJ-HHMM.dump`
+  (`pg_dump -Fc`, écrit en `.part` puis renommé, 7 jours gardés). Le client accepte de perdre
+  une heure au plus.
+- **journald persistant** (`Storage=persistent`) : l'historique d'un plantage survit au redémarrage.
+- **Windows (srv01)** : tâche planifiée `Rapport-quotas` (7 h, SYSTEM) → CSV d'occupation des
+  quotas FSRM dans `C:\Rapports`. Le service FSRM (`SrmSvc`) redémarre seul s'il plante
+  (options de récupération, l'équivalent de `Restart=` : `sc.exe qfailure SrmSvc`).
+
+| Test (`playbooks/verif_trackr.yml`) | Résultat |
+|---|---|
+| `kill -9` du processus TrackR | relancé par systemd 5 s après, nouveau PID, `/health` répond |
+| sauvegarde puis `pg_restore` dans `trackr_test` | autant de livraisons que dans `trackr` |
+| `systemctl list-timers pg-backup.timer` | prochaine sauvegarde à l'heure pile (+ ≤ 2 min) |
+| depuis deb01 (Lille) : `http://trackr.loginord.internal:8080/livraisons` | la liste, via le VPN |
+| `Start-ScheduledTask Rapport-quotas` sur srv01 | `C:\Rapports\quotas-….csv`, résultat 0 |
+
+```sh
+ansible-playbook site.yml -l db01 --tags trackr      # changed=0 au 2e passage
+ansible-playbook site.yml -l srv01 --tags taches
+ansible-playbook playbooks/verif_trackr.yml
+journalctl -u trackr -f                              # sur db01, avant toute autre hypothèse
 ```

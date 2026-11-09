@@ -1,0 +1,77 @@
+# Vérifications MC11 : ansible-playbook playbooks/verif_trackr.yml
+# kill -9 → TrackR revient seul ; une sauvegarde se restaure sur une base de test.
+- name: TrackR survit à un kill -9, sa sauvegarde se restaure
+  hosts: db_servers
+  gather_facts: false
+  become: true
+  vars:
+    url: http://127.0.0.1:{{ trackr_port | default(8080) }}
+  tasks:
+    - name: Une livraison, pour avoir quelque chose à restaurer
+      ansible.builtin.uri:
+        url: "{{ url }}/livraisons"
+        method: POST
+        body_format: json
+        body: {camion: "CAM-{{ 999 | random }}", destination: Dunkerque}
+        status_code: 201
+
+    - name: PID avant
+      ansible.builtin.command: systemctl show -p MainPID --value trackr
+      register: avant
+      changed_when: false
+
+    - name: kill -9
+      ansible.builtin.command: kill -9 {{ avant.stdout }}
+      changed_when: true
+
+    # RestartSec=5 : TrackR doit répondre de nouveau en quelques secondes
+    - name: TrackR répond de nouveau
+      ansible.builtin.uri:
+        url: "{{ url }}/health"
+      register: sante
+      until: sante.status == 200
+      retries: 15
+      delay: 1
+
+    - name: PID après
+      ansible.builtin.command: systemctl show -p MainPID --value trackr
+      register: apres
+      changed_when: false
+
+    - name: Sauvegarde maintenant (le même service que le timer)
+      ansible.builtin.systemd_service:
+        name: pg-backup.service
+        state: started
+
+    - name: Restaurer la dernière sauvegarde dans trackr_test et compter
+      ansible.builtin.shell: |
+        set -euo pipefail
+        f=$(ls -t /var/backups/pg/trackr-*.dump | head -1)
+        dropdb --if-exists trackr_test
+        createdb trackr_test
+        pg_restore --no-owner -d trackr_test "$f"
+        echo "$f"
+        psql -Atc 'SELECT count(*) FROM livraisons' trackr
+        psql -Atc 'SELECT count(*) FROM livraisons' trackr_test
+      args:
+        executable: /bin/bash
+      become_user: postgres
+      register: restau
+      changed_when: true
+
+    - name: Prochaine sauvegarde, score de durcissement
+      ansible.builtin.shell: |
+        systemctl list-timers pg-backup.timer --no-pager | head -2
+        systemd-analyze security trackr --no-pager | tail -1
+      register: infos
+      changed_when: false
+
+    - name: Résultat
+      ansible.builtin.assert:
+        that:
+          - apres.stdout != avant.stdout
+          - restau.stdout_lines[1] == restau.stdout_lines[2]
+        success_msg: >-
+          kill -9 : PID {{ avant.stdout }} → {{ apres.stdout }} ;
+          restauré {{ restau.stdout_lines[0] | basename }} : {{ restau.stdout_lines[2] }} livraison(s) sur {{ restau.stdout_lines[1] }} ;
+          {{ infos.stdout_lines | join(' | ') }}

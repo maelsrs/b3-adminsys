@@ -191,6 +191,54 @@
     state: present
   tags: vss
 
+# MC11 : rapport quotidien d'occupation des quotas, par une tâche planifiée créée par Ansible
+- name: Dossiers des scripts et des rapports
+  ansible.windows.win_file:
+    path: "{{ item }}"
+    state: directory
+  loop: [C:\Scripts, C:\Rapports]
+  tags: taches
+
+- name: Script du rapport des quotas
+  ansible.windows.win_copy:
+    dest: C:\Scripts\quotas.ps1
+    content: |
+      # Géré par Ansible (rôle win_shares, MC11) : occupation des quotas FSRM, en CSV
+      Get-FsrmQuota | Select-Object Path,
+          @{ n = 'Utilise_Mo'; e = { [math]::Round($_.Usage / 1MB) } },
+          @{ n = 'Quota_Mo';   e = { [math]::Round($_.Size / 1MB) } },
+          @{ n = 'Pourcent';   e = { [math]::Round(100 * $_.Usage / $_.Size, 1) } } |
+        Export-Csv "C:\Rapports\quotas-$(Get-Date -Format yyyy-MM-dd).csv" -NoTypeInformation -Encoding UTF8
+      Get-ChildItem C:\Rapports\quotas-*.csv | Where-Object LastWriteTime -lt (Get-Date).AddDays(-30) | Remove-Item
+  tags: taches
+
+- name: Tâche planifiée Rapport-quotas (tous les jours à 7 h)
+  community.windows.win_scheduled_task:
+    name: Rapport-quotas
+    description: MC11 (Ansible) - occupation des quotas FSRM dans C:\Rapports
+    actions:
+      - path: powershell.exe
+        arguments: -NoProfile -ExecutionPolicy Bypass -File C:\Scripts\quotas.ps1
+    triggers:
+      - type: daily
+        start_boundary: "2026-01-01T07:00:00"
+    username: SYSTEM
+    run_level: highest
+    state: present
+  tags: taches
+
+# L'équivalent de Restart=on-failure : options de récupération du service (sc.exe failure)
+- name: FSRM redémarre seul s'il plante
+  ansible.windows.win_service:
+    name: SrmSvc
+    start_mode: auto
+    failure_actions:
+      - {type: restart, delay_ms: 5000}
+      - {type: restart, delay_ms: 30000}
+      - {type: none}
+    failure_reset_period_sec: 86400
+  tags: taches
+
 # MC08 : les partages vivaient sur C:\Partages, avant le pool
 - name: Ancien emplacement des partages
   ansible.windows.win_file:
