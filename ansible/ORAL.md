@@ -21,6 +21,7 @@ l'oral. Jamais à l'écran.
 | win01 (DC Dunkerque) | 10.1.20.30 | `ssh Administrator@10.1.20.30` puis `powershell` | Administrator | `vault_win_password` |
 | srv01 (fichiers Lille) | 10.1.10.30 | `ssh Administrateur@10.1.10.30` puis `powershell` | Administrateur | `vault_win_password` |
 | Partages Windows | 10.1.10.30 | `smbclient //10.1.10.30/Partages -U 'LOGINORD\alice.martin' -c ls` | un salarié | `vault_pwd_init` |
+| mon01 (supervision) | 10.1.10.22 | `ssh ansible@10.1.10.22` ; alertes : **http://10.1.10.22:9090/classic/alerts** (Firefox) | ansible | clé SSH |
 | OpenLDAP | 10.1.10.21 | `ldapsearch -x -ZZ -H ldap://ldap01.loginord.internal …` | cn=admin | `vault_ldap` |
 
 **Montrer Windows** : les serveurs sont en Server Core (pas de bureau). On y entre en **SSH**
@@ -47,6 +48,7 @@ verrait, mais sans avoir besoin d'un poste Windows.
   (routeurs et openvpn : en échec, connu)
 - [ ] `ansible-playbook playbooks/verif_trackr.yml` : tout vert
 - [ ] RAID de db01 en `[UU]` : `ssh ansible@10.1.20.21 cat /proc/mdstat`
+- [ ] `ansible-playbook playbooks/verif_supervision.yml` : toutes les cibles `up`, **aucune alerte en cours**
 - [ ] Répéter une fois en chronométrant
 - [ ] **Si l'oral tombe un dimanche** : ne pas lancer `campagne.yml` (il mettrait vraiment à jour)
 
@@ -60,6 +62,7 @@ Terminal en grosse police (Ctrl + +), un onglet par rôle :
 | T2 db01 | `ssh ansible@10.1.20.21` |
 | T3 win01 | `ssh Administrator@10.1.20.30`, puis `powershell` |
 | T4 Ansible | `cd ~/Documents/b3-adminsys/ansible` (lancé au début, regardé à la fin) |
+| T5 alertes | `ssh ansible@10.1.10.22 sudo journalctl -u alertes -f -o short` (les alertes arrivent ici) |
 
 Firefox, dans l'ordre :
 
@@ -67,6 +70,7 @@ Firefox, dans l'ordre :
 2. `inventory/group_vars/all/personnel.yml` sur GitHub
 3. http://10.1.20.21:8080 (page de connexion TrackR)
 4. `ansible/rapports/maj-2026-11-09.html` (glisser le fichier dans Firefox)
+5. http://10.1.10.22:9090/classic/alerts (les règles d'alerte, vertes)
 
 ## 4. Le déroulé
 
@@ -169,11 +173,8 @@ sudo mdadm /dev/md0 --fail $D && sudo mdadm /dev/md0 --remove $D
 cat /proc/mdstat                                          # [U_] : un disque mort
 ```
 
-Firefox : créer `ORAL-002` → **ça marche**, la base tourne sur un seul disque.
-
-```sh
-sudo mdadm /dev/md0 --add $D && cat /proc/mdstat         # reconstruction en cours
-```
+Firefox : créer `ORAL-002` → **ça marche**, la base tourne sur un seul disque. **On laisse le
+disque retiré** : on le remet au bloc « être prévenu ».
 
 > Et si quelqu'un supprime des données par erreur ? Le miroir supprime des deux côtés. D'où une
 > sauvegarde toutes les heures, et on vérifie qu'elle se restaure.
@@ -183,7 +184,7 @@ sudo ls -lt /var/backups/pg | head -3                    # une sauvegarde par he
 systemctl list-timers pg-backup.timer --no-pager         # la prochaine
 ```
 
-### 7:30 · « La liaison coupe tous les mois » (1 min) · T3, win01
+### 7:30 · « La liaison coupe tous les mois » (30 s) · T3, win01
 
 > Dunkerque a son propre contrôleur de domaine : le registre du personnel et le guichet qui
 > vérifie les badges. Liaison coupée, les gens de Dunkerque se connectent quand même, et TrackR
@@ -201,7 +202,28 @@ Get-ADReplicationPartnerMetadata -Target win01 | ft Partner,LastReplicationSucce
 On ne coupe pas le lien en direct : notre VPN arrive à Lille, couper le tunnel nous couperait
 aussi de Dunkerque. Si le jury insiste : README « Démo : couper le lien », à la console Proxmox.
 
-### 8:30 · « L'assureur veut la preuve » et « tout doit être écrit » (1 min)
+### 8:00 · « Pas de vision quand l'application tombe » (1 min) · T5, puis T2
+
+> Le disque qu'on a retiré tout à l'heure : personne n'a rien remarqué, la base tourne. C'est
+> justement le danger, on ne le découvre qu'à la panne du second. Alors une machine surveille
+> tout, et nous prévient.
+
+T5 : la ligne arrivée toute seule, ~2 min après le retrait :
+`ALERTE RaidDegrade : db01 : le RAID md0 a perdu un disque`. Firefox onglet 5 : la règle en rouge.
+
+T2 : on remet le disque, l'alerte se résout d'elle-même (`RÉSOLU RaidDegrade`, ~1 min après la
+reconstruction).
+
+```sh
+sudo mdadm /dev/md0 --add $D && cat /proc/mdstat         # reconstruction en cours
+```
+
+> Elle surveille aussi la liaison avec Dunkerque, les disques qui se remplissent, TrackR vu
+> comme un utilisateur, et les services des deux contrôleurs. Les journaux de toutes les Debian
+> arrivent au même endroit, gardés 3 mois. Pour le kill de TrackR, pas d'alerte : il est revenu
+> en 5 secondes, on ne réveille personne pour ça.
+
+### 9:00 · « L'assureur veut la preuve » et « tout doit être écrit » (45 s)
 
 Firefox onglet 4 : le rapport. Une ligne par machine, en français, daté.
 
@@ -219,10 +241,10 @@ T4 : le récapitulatif lancé au début → `changed=0`.
 > On a relancé toute la recette sur une machine : rien n'a changé, tout est déjà conforme. Si
 > votre informaticien part, le suivant relance la même commande.
 
-### 9:30 · Conclusion (30 s)
+### 9:45 · Conclusion (15 s)
 
-> Ce qui reste : être **prévenu** quand TrackR ou un disque tombe (la supervision, notre
-> prochaine étape), et une copie des sauvegardes sur l'autre site.
+> Ce qui reste : une copie des sauvegardes sur l'autre site, et les alertes sur le téléphone
+> des informaticiens (Discord) en plus du journal.
 
 ## 5. Si ça casse pendant l'oral
 
@@ -232,7 +254,8 @@ T4 : le récapitulatif lancé au début → `changed=0`.
 | TrackR ne revient pas après le kill | `sudo systemctl start trackr` ; puis `sudo journalctl -u trackr -n 20` |
 | smbclient muet ou lent | ajouter `-m SMB3` ; sinon montrer le tableau de tests du README (MC10) |
 | SSH Windows refusé (empreinte) | `ssh-keygen -R <ip>` puis reconnecter |
-| Le RAID ne reconstruit pas | `sudo mdadm /dev/md0 --add $D` de nouveau ; le dire : « c'est le cas où l'alerte servirait » |
+| Le RAID ne reconstruit pas | `sudo mdadm /dev/md0 --add $D` de nouveau |
+| L'alerte RAID n'est pas encore là à 8:00 | Firefox onglet 5 : la règle est déjà « pending » (orange) ; parler 30 s des journaux (`ssh ansible@10.1.10.22 ls /var/log/central`), puis revenir à T5 |
 | `site.yml` pas fini à 8:30 | ne pas attendre : le montrer en fin de questions |
 | Plus de temps du tout | sauter les *(si le temps)* et le bloc 7:30 (le garder pour les questions) |
 
@@ -251,6 +274,8 @@ T4 : le récapitulatif lancé au début → `changed=0`.
 | Clichés VSS | Une **photo** du classeur à 7 h et à midi |
 | systemd `Restart=` | Un **gardien** qui relance la machine si elle cale |
 | Quota | Une étagère par service, de taille fixe |
+| Supervision | Un **gardien de nuit** qui fait sa ronde toutes les 30 s et appelle si une porte est ouverte |
+| Durée d'une alerte (`for`) | On n'appelle pas pour une porte qui claque : seulement si elle reste ouverte 5 min |
 | VPN | Un **tunnel privé** : de l'extérieur, on ne voit pas ce qui y passe |
 | Vault | Un coffre-fort dans le dépôt : le code est lisible, les mots de passe non |
 
@@ -281,11 +306,18 @@ T4 : le récapitulatif lancé au début → `changed=0`.
   visible, rattrapage d'une exécution manquée (`Persistent=true`).
 - **Le score 1.0 de `systemd-analyze security` ?** 0 = isolé au maximum, 10 = rien. TrackR n'écrit
   que dans `/var/lib/trackr`, sans privilège, ne parle qu'au réseau interne.
+- **Pourquoi Prometheus et pas Zabbix ?** Paquets Debian, pas de base de données, tient dans 1 Go
+  de RAM (mon01). Zabbix est plus complet mais plus gourmand. Les deux se défendent.
+- **Et si mon01 tombe ?** Plus personne n'est prévenu de rien : c'est la limite. Une sonde externe
+  sur mon01 (ou un second Prometheus à Dunkerque) la lèverait.
+- **Les journaux pendant une coupure de liaison ?** Chaque Debian les garde en file d'attente sur
+  disque et les envoie au retour : rien n'est perdu.
 - **Intervenir la nuit de chez soi ?** VPN obligatoire, SSH par clé seulement, root refusé.
 
 ## 8. Limites (les annoncer avant qu'on les trouve)
 
-- Pas encore d'alerte quand TrackR ou un disque tombe (MC15).
+- Alertes dans le journal de mon01 seulement (Discord prévu) ; mon01 n'est surveillé par personne.
+- Journaux Windows pas centralisés (seulement les Debian).
 - Sauvegardes de TrackR sur la même machine : la copie vers Lille n'est pas faite.
 - Tous les rôles FSMO sur win02 (acceptable à 2 DC).
 - Certificats auto-signés (OpenLDAP, LDAPS des DC) ; lecture anonyme de l'annuaire prestataires.
