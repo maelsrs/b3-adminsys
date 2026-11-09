@@ -43,8 +43,8 @@ personnel:
   - id: karim.benali
     prenom: Karim
     nom: Benali
-    service: dev
-    site: dunkerque
+    service: compta
+    site: lille
     arrivee: 2026-11-02
   - id: chloe.petit
     prenom: Chloé
@@ -52,6 +52,13 @@ personnel:
     service: dev
     site: lille
     arrivee: 2026-11-02
+    depart: 2026-11-09T16:00
+  - id: helene.lefevre
+    prenom: Hélène
+    nom: Lefèvre
+    service: rh
+    site: lille
+    arrivee: 2026-11-09
 
   - id: jdupont
     type: prestataire

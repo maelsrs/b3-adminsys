@@ -21,7 +21,7 @@ seulement si le jury creuse (voir le README, sections « Points à expliquer à 
 | « TrackR ne doit jamais bloquer les camions » | TrackR = service systemd qui **redémarre seul** ; base sur **RAID 1** ; connexion par le DC **de Dunkerque** d'abord | `kill -9` → relancé en 5 s (`verif_trackr.yml`) ; RAID dégradé, la base reste lisible |
 | « Ne plus jamais ressaisir des jours de travail » | Sauvegarde **toutes les heures** (perte max : 1 h), **testée** par restauration | `pg_restore` dans `trackr_test`, même nombre de lignes |
 | « Le serveur compta est tombé l'hiver dernier » | Partages sur deux disques en miroir (Storage Spaces) ; clichés VSS à 7 h et 12 h | `Get-VirtualDisk` : Mirror Healthy ; fichier supprimé puis restauré |
-| « Le chef parti se connectait encore » | **Un seul annuaire** (AD) pour Windows et Linux : un compte désactivé l'est partout. Réplication **immédiate** entre sites (notification) | Désactiver un compte à Lille : refusé à Dunkerque quelques secondes après (à répéter avant l’oral) |
+| « Le chef parti se connectait encore » / « un accès coupé le soir même » | **Un seul annuaire** (AD) pour Windows et Linux ; le départ est une ligne dans `personnel.yml` avec son heure : compte désactivé (jamais supprimé), retiré de ses groupes, refusé sur les Debian même hors ligne. Réplication **immédiate** entre sites (notification) | Désactiver un compte à Lille : refusé à Dunkerque quelques secondes après (à répéter avant l’oral) |
 | « Les salaires ont fuité » | Partage RH : **seul le groupe RH**, même pas les admins IT ; les autres **ne voient même pas** le dossier (ABE) | alice (compta) ne voit que `Compta`, `\\srv01\RH` : accès refusé |
 | « Les serveurs se remplissent de n'importe quoi » | **Quotas stricts** : 5 Go par service (Windows), 200 Mo pour le dépôt des devs (Linux) | Copie de 5,1 Go refusée ; `dd` coupé à 200 Mo |
 | « Un seul identifiant par personne » | Comptes AD pour tout le monde, y compris pour se connecter aux Debian (Kerberos/SSSD) | test2 entre en SSH sur deb01 avec son compte Windows ; paul (quais) entre dans TrackR, alice (compta) refusée |
@@ -31,8 +31,9 @@ seulement si le jury creuse (voir le README, sections « Points à expliquer à 
 | « Si mon informaticien part, un autre doit tout reconstruire » / « tout doit être écrit » | **Tout est en Ansible** + README ; mots de passe chiffrés (vault) | `ansible-playbook site.yml` → `changed=0` au 2e passage |
 | « On pense ouvrir un troisième site » | Les sites sont une **liste** dans le code : OU, sous-réseaux, DHCP, liens AD se génèrent | Montrer `ad_sites` dans l'inventaire |
 | « Budget serré, aucun arrêt, des résultats vite » | Logiciels libres, clones liés Proxmox (un disque ne stocke que ses différences), déploiement par morceaux (`--tags`, `-l`) sans arrêter le reste | — |
+| « Ce sont les RH qui décident » | `personnel.yml` : les RH le modifient par pull request, et CODEOWNERS rend leur validation obligatoire. Git garde qui a demandé, qui a validé, quand | `git log -p inventory/group_vars/all/personnel.yml` ; `verif_personnel.yml` |
 
-**À venir (le dire franchement)** : arrivées/départs validés par les RH (MC13), preuve des mises
+**À venir (le dire franchement)** : preuve des mises
 à jour pour l'assureur (MC14), alerte quand TrackR tombe (MC15).
 
 ## 3. Les images pour un non-informaticien

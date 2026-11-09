@@ -821,3 +821,47 @@ de téléchargement et un jeton ; à l'étape `config.sh`, ajouter le label :
 pip install ansible-lint yamllint     # (dans un venv)
 cd ansible && yamllint . && ansible-lint
 ```
+
+## Arrivées, mutations, départs (MC13)
+
+**Une seule source de vérité** : `inventory/group_vars/all/personnel.yml`, le fichier des RH (une
+ligne par personne : id, service, site, dates). Personne ne crée de compte à la main. Les RH le
+modifient par **pull request** ; `.github/CODEOWNERS` les rend obligatoires sur ce fichier
+(*Require review from Code Owners* sur `main`). **Git est le journal d'audit** : qui a demandé
+quoi, quand, et qui l'a validé.
+
+`inventory/group_vars/all/regles.yml` (l'IT) : service → groupes, site → OU, groupes des comptes
+admin, mission → groupes OpenLDAP. **Les groupes se calculent, ils ne se saisissent jamais** :
+`ad_users`, `personnel_partis`, `openldap_prestataires` et `openldap_groups` sont calculés à
+partir des deux fichiers.
+
+| Mouvement | AD (`ad_dc`, tag `annuaire`) | Debian (`ad_member`) | OpenLDAP |
+|---|---|---|---|
+| **Arrivée** | compte dans l'OU du site, groupes du service, mot de passe initial (vault) **à changer à la première connexion** (seulement à la création) ; actif à partir de `arrivee` | | prestataire : entrée + groupes de sa mission |
+| **Mutation** | `identity` retrouve le compte où qu'il soit, `path` le **déplace** ; groupes **remplacés** (`groups: set`, jamais `add`) : l'ancien service est perdu | les droits suivent (groupes AD) | |
+| **Départ** (`depart`, heure de Paris ; sans heure : 18:00) | **désactivé, jamais supprimé** (la compta récupère ses données 3 mois, la trace reste), rangé dans `OU=Départs`, retiré de tous ses groupes ; son compte `adm-` aussi | `simple_deny_users` : refusé **même hors ligne** (le cache SSSD ne sait pas encore que le compte est désactivé) ; sessions ouvertes fermées (`loginctl terminate-user`) ; `sss_cache -E` | `expiration` passée : mot de passe bloqué (`{CRYPT}*`), retiré des groupes |
+
+- **Comptes admin** : `admin: true` génère `adm-<prénom>` dans `OU=Admins` (`GG_Admins_Domaine`,
+  PSO) ; désactivé en même temps que le compte du quotidien.
+- **Identifiants** (règle en tête de `personnel.yml`) : `prénom.nom` sans accents (Hélène
+  Lefèvre → `helene.lefevre`), homonyme → `alice.martin2`, 20 caractères au plus
+  (`sAMAccountName`). L'export Excel des RH ne sert qu'une fois : converti en YAML, puis on n'y
+  touche plus.
+- **Mot de passe initial** : `vault_pwd_init`, jamais en clair ; `no_log` sur la tâche.
+- **Réconciliation** : `playbooks/verif_personnel.yml` signale tout compte actif de l'OU LogiNord
+  absent du fichier (`HORS FICHIER`).
+
+Testé (branche `rh/mouvements-novembre`) :
+
+| Personne | Mouvement | AD | SSSD sur deb01 |
+|---|---|---|---|
+| helene.lefevre | arrivée aux RH (Lille) | actif, `OU=Utilisateurs,OU=Lille`, `GG_RH`, mot de passe à changer | refusé (pas un groupe Linux) |
+| karim.benali | dev Dunkerque → compta Lille | déplacé à Lille, `GG_Compta` **à la place de** `GG_Developpeurs` | `Success` → `Permission denied` |
+| chloe.petit | départ le 9/11 à 16:00 | **INACTIF**, `OU=Départs`, aucun groupe | `Success` → `Permission denied` |
+| second passage | | `changed=0` | `changed=0` |
+
+```sh
+ansible-playbook site.yml -l domain_controllers --tags annuaire   # l'AD
+ansible-playbook site.yml -l ad_members,ldap_servers              # Debian, OpenLDAP
+ansible-playbook playbooks/verif_personnel.yml                    # AD, réconciliation, SSSD
+```
