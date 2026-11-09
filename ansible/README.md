@@ -3,6 +3,8 @@
 Construit une Debian (site A) et un Windows Server Core (site B) avec un rôle `baseline` :
 nom d'hôte, fuseau horaire, NTP, compte admin.
 
+Pour l’oral : [ORAL.md](ORAL.md) (problèmes du client → réponses → preuves, démos, questions).
+
 ## Architecture
 
 ```mermaid
