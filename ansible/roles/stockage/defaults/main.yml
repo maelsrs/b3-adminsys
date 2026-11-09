@@ -1,3 +1,4 @@
+---
 stockage_raid_device: /dev/md0
 stockage_raid_disks: []
 stockage_vg: vg_data

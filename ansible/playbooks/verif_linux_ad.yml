@@ -1,3 +1,4 @@
+---
 # Vérifications MC06, en lecture seule : ansible-playbook playbooks/verif_linux_ad.yml
 - name: Debian dans le domaine
   hosts: ad_members

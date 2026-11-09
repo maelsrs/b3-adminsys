@@ -1,3 +1,4 @@
+---
 router_mgmt_if: eth0
 router_mtu: 1500
 router_interfaces: []

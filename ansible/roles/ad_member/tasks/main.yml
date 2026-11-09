@@ -1,3 +1,4 @@
+---
 # Prérequis : l'heure (chrony sur les DC, rôle baseline) et le DNS. Sans le DNS de l'AD, ni
 # realm discover ni Kerberos ne trouvent les DC (enregistrements SRV).
 - name: Empêcher dhclient de réécrire resolv.conf
@@ -19,7 +20,7 @@
     mode: "0644"
 
 # bind9-dnsutils : nsupdate (SSSD inscrit la machine dans le DNS) et dig pour diagnostiquer
-- name: realmd, SSSD, Kerberos
+- name: Paquets realmd, SSSD, Kerberos
   ansible.builtin.apt:
     name:
       - realmd
@@ -48,7 +49,7 @@
 
 # GSSAPI : ldapsearch vise le DC par son nom ; sans ça, libldap le remplace par le résultat
 # d'une résolution inverse, et le ticket Kerberos demandé ne correspond plus
-- name: ldapsearch -Y GSSAPI garde le nom du serveur
+- name: LDAP en GSSAPI, ldapsearch garde le nom du serveur
   ansible.builtin.lineinfile:
     path: /etc/ldap/ldap.conf
     regexp: ^SASL_NOCANON
@@ -70,6 +71,7 @@
       - "{{ ad_domain }}"
     stdin: "{{ ad_admin_password }}"
   when: ad_domain not in ad_member_realms.stdout_lines
+  changed_when: true
   no_log: true
 
 - name: Configuration SSSD
@@ -96,9 +98,10 @@
 - name: Créer le répertoire personnel à la première connexion
   ansible.builtin.command: pam-auth-update --enable mkhomedir
   when: ad_member_mkhomedir.rc != 0
+  changed_when: true
 
 # Un sudoers cassé et plus personne ne fait sudo : visudo valide avant de remplacer
-- name: sudo pour les groupes AD
+- name: Droits sudo pour les groupes AD
   ansible.builtin.template:
     src: sudoers-ad.j2
     dest: /etc/sudoers.d/ad-admins

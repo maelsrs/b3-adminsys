@@ -1,3 +1,4 @@
+---
 # Partages des services : servis par srv01 sur D:\Partages (pool en miroir, MC10), montés en
 # lecteur réseau par la GPO « USR - Lecteurs réseau » (MC08). Qui monte = le GG (qui),
 # droits NTFS = le DL (quoi). quota : FSRM, strict (5 Go par service, demande du client).

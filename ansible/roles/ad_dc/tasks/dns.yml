@@ -1,3 +1,4 @@
+---
 # Zones et enregistrements sont dans l'annuaire : écrits sur la racine, répliqués partout.
 # Les redirecteurs sont un réglage de chaque serveur DNS.
 - name: Zones inverses intégrées à AD

@@ -1,3 +1,4 @@
+---
 # Vérifications MC08, en lecture seule (hors gpupdate) : ansible-playbook playbooks/verif_gpo.yml
 - name: GPO, liens et politique de mots de passe, vus du DC racine
   hosts: "{{ groups['domain_controllers'] | first }}"
@@ -18,7 +19,8 @@
             liens      = @(Get-ADOrganizationalUnit -SearchBase $Base -Filter * | ForEach-Object {
                            $l = (Get-GPInheritance -Target $_.DistinguishedName).GpoLinks.DisplayName
                            if ($l) { "$($_.DistinguishedName.Replace(",$Base", '')) -> $($l -join ', ')" } })
-            mots_passe = "longueur $($p.MinPasswordLength), verrouillage après $($p.LockoutThreshold) échecs pendant $($p.LockoutDuration)"
+            mots_passe = "longueur $($p.MinPasswordLength), " +
+                         "verrouillage après $($p.LockoutThreshold) échecs pendant $($p.LockoutDuration)"
           }
       register: verif_dc
 
@@ -32,7 +34,7 @@
   vars_files:
     - ../vault/secrets.yml
   tasks:
-    - name: gpupdate, puis gpresult (ordinateur) et pare-feu effectif
+    - name: Lancer gpupdate, puis gpresult (ordinateur) et pare-feu effectif
       ansible.windows.win_powershell:
         script: |
           $Ansible.Changed = $false
@@ -47,7 +49,8 @@
           [pscustomobject]@{
             gpo_appliquees = @($applied)
             pare_feu       = @(Get-NetFirewallProfile -PolicyStore ActiveStore |
-                               ForEach-Object { "$($_.Name) : actif=$($_.Enabled), entrant=$($_.DefaultInboundAction)" })
+                               ForEach-Object { "$($_.Name) : actif=$($_.Enabled), " +
+                                                 "entrant=$($_.DefaultInboundAction)" })
             partages       = @(Get-SmbShare -Special $false | ForEach-Object Name)
           }
       register: verif_srv

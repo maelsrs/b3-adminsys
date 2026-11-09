@@ -1,3 +1,4 @@
+---
 - name: OU racine
   microsoft.ad.ou:
     name: "{{ ad_ou_root }}"

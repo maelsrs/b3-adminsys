@@ -1,3 +1,4 @@
+---
 - name: Rôle DHCP
   ansible.windows.win_feature:
     name: DHCP

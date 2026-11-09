@@ -742,3 +742,55 @@ ansible-playbook site.yml -l srv01 --tags taches
 ansible-playbook playbooks/verif_trackr.yml
 journalctl -u trackr -f                              # sur db01, avant toute autre hypothèse
 ```
+
+## CI/CD GitLab (MC12)
+
+`.gitlab-ci.yml` (racine du dépôt), deux étapes :
+
+| Étape | Où | Quand | Quoi |
+|---|---|---|---|
+| `lint` | runners partagés de gitlab.com (`python:3.12-slim`) | chaque push, chaque merge request | `yamllint .` puis `ansible-lint` (profil `production`, le plus strict) |
+| `deploy` | **notre runner** (tag `loginord`, exécuteur shell, sur le portable relié au VPN) | **à la main**, sur `main` seulement | `ansible-playbook site.yml` |
+
+- **Aucun secret chez gitlab.com** : le lint remplace les fichiers du vault par des fichiers vides
+  (le contrôle de syntaxe charge les `vars_files`, sans avoir besoin de leurs valeurs).
+- **`VAULT_PASS`** : variable CI **protégée** (seulement sur `main`), **masquée** (`[MASKED]`
+  dans les journaux), de **type fichier** (la variable contient un chemin, exactement ce
+  qu'attend `ANSIBLE_VAULT_PASSWORD_FILE`). Côté Ansible, `no_log` sur les tâches qui manient
+  des mots de passe.
+- **`deploy`** : au clic (« Run job »), on peut changer `LIMIT` (`db01`) et `TAGS` (`trackr`).
+  `resource_group` : jamais deux déploiements en même temps sur les mêmes VM. Les routeurs et
+  openvpn sont exclus par défaut tant qu'Ansible n'y entre pas.
+- **Réglages du lint** : `.yamllint` (120 colonnes, `---` en tête de fichier, `true`/`false`
+  seulement) et `.ansible-lint`. Une seule règle ignorée, `var-naming[no-role-prefix]` : `wg_*`,
+  `ospf_*` et `partages` sont **partagées entre rôles** et définies dans l'inventaire.
+
+**Réglages GitLab** (Paramètres du projet) :
+
+| Réglage | Valeur | Pourquoi |
+|---|---|---|
+| Dépôt → Branches protégées → `main` : pousser | Personne | plus de changement direct en production |
+| `main` : fusionner | Maintainers | |
+| Rôle des RH | Maintainer | **les RH valident** les arrivées et départs (MC13) |
+| Rôle de l'IT | Developer | l'IT propose, ne fusionne pas |
+| Merge requests → « Le pipeline doit réussir » | coché | pas de fusion sur un lint rouge |
+| CI/CD → Variables → `VAULT_PASS` | protégée, masquée, fichier | le mot de passe du vault |
+
+Sur gitlab.com gratuit, les approbations obligatoires sont payantes : le contournement est que
+seul le rôle Maintainer, donc les RH, peut fusionner dans `main`.
+
+**Le runner** (sur le portable, en utilisateur normal : il reprend sa clé SSH et son Ansible) :
+
+```sh
+sudo pacman -S gitlab-runner
+# Projet → Paramètres → CI/CD → Runners → New project runner, tag loginord → token glrt-…
+gitlab-runner register --url https://gitlab.com --token glrt-… --executor shell
+gitlab-runner run        # à laisser tourner pendant les déploiements (VPN connecté)
+```
+
+**Lancer le lint en local**, avant de pousser :
+
+```sh
+pip install ansible-lint yamllint     # (dans un venv)
+cd ansible && yamllint . && ansible-lint
+```

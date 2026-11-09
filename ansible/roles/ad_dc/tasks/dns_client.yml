@@ -1,3 +1,4 @@
+---
 # Un DC ne doit interroger que les DNS de l'AD : sinon il cherche loginord.internal sur
 # Internet. Toutes les cartes, y compris celle de gestion (Ansible s'y connecte par IP).
 - name: Serveurs DNS du DC

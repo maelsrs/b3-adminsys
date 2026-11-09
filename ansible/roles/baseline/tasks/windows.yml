@@ -1,3 +1,4 @@
+---
 - name: Définir le nom d'hôte
   ansible.windows.win_hostname:
     name: "{{ inventory_hostname }}"

@@ -1,3 +1,4 @@
+---
 - name: Redémarrer chrony
   ansible.builtin.service:
     name: "{{ baseline_chrony_service }}"
@@ -6,6 +7,7 @@
 # ifdown échoue si la carte n'était pas encore montée : seul ifup compte
 - name: Relancer la carte LAN
   ansible.builtin.shell: ifdown {{ baseline_linux_lan.iface }}; ifup {{ baseline_linux_lan.iface }}
+  changed_when: true
 
 - name: Redémarrer w32time
   ansible.windows.win_service:

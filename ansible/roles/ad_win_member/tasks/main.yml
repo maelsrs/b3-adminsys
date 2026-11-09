@@ -1,3 +1,4 @@
+---
 # Un membre ne doit interroger que les DNS de l'AD (le DC du site d'abord), sur toutes ses
 # cartes : sinon il cherche loginord.internal sur Internet et ne trouve aucun DC
 - name: Serveurs DNS de l'AD

@@ -1,3 +1,4 @@
+---
 # Même schéma partout : tester l'existence, créer si absent, renseigner $Ansible.Changed
 - name: Sites AD (le premier reprend Default-First-Site-Name)
   ansible.windows.win_powershell:

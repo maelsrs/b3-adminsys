@@ -1,3 +1,4 @@
+---
 # MC11 : TrackR en service systemd durci, base sauvegardée toutes les heures par un timer.
 # TrackR tourne à côté de sa base, sur db01 (Dunkerque) : rien ne dépend du lien inter-sites.
 - name: Paquets (pilote PostgreSQL de Python ; acl pour que become_user postgres/trackr marche)
@@ -12,7 +13,7 @@
     state: directory
     mode: "0755"
 
-- name: journald persistant
+- name: Journaux persistants (journald)
   ansible.builtin.copy:
     dest: /etc/systemd/journald.conf.d/persistent.conf
     content: |

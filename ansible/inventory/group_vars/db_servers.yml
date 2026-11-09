@@ -1,3 +1,4 @@
+---
 # Disques → RAID 1 → LVM → système de fichiers → montage (MC09)
 
 # Les disques par leur identifiant stable (/dev/sdb peut changer de nom au démarrage)

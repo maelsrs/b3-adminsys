@@ -1,6 +1,7 @@
+---
 # debconf avant apt, sinon slapd s'installe avec un domaine tiré du nom d'hôte. Les mots de
 # passe debconf ne se relisent pas (toujours « changed ») : on ne les pose qu'avant l'installation.
-- name: slapd déjà installé ?
+- name: Paquet slapd déjà installé ?
   ansible.builtin.command: dpkg-query -W -f=${Status} slapd
   register: openldap_installed
   changed_when: false
@@ -21,7 +22,7 @@
   no_log: true
 
 # python3-ldap : les modules LDAP d'Ansible en ont besoin sur la machine
-- name: slapd, outils LDAP
+- name: Paquets slapd et outils LDAP
   ansible.builtin.apt:
     name: [slapd, ldap-utils, python3-ldap]
     state: present
@@ -162,7 +163,8 @@
         dn: "cn={{ item.cn }},ou=prestataires,{{ openldap_base }}"
         objectClass: [groupOfNames]
         attributes:
-          member: "{{ item.members | map('regex_replace', '^(.*)$', 'uid=\\1,ou=prestataires,' ~ openldap_base) | list }}"
+          member: >-
+            {{ item.members | map('regex_replace', '^(.*)$', 'uid=\\1,ou=prestataires,' ~ openldap_base) | list }}
       loop: "{{ openldap_groups }}"
       loop_control:
         label: "{{ item.cn }}"
@@ -171,7 +173,8 @@
       community.general.ldap_attrs:
         dn: "cn={{ item.cn }},ou=prestataires,{{ openldap_base }}"
         attributes:
-          member: "{{ item.members | map('regex_replace', '^(.*)$', 'uid=\\1,ou=prestataires,' ~ openldap_base) | list }}"
+          member: >-
+            {{ item.members | map('regex_replace', '^(.*)$', 'uid=\\1,ou=prestataires,' ~ openldap_base) | list }}
         state: exact
       loop: "{{ openldap_groups }}"
       loop_control:
@@ -197,6 +200,7 @@
 
 - name: Mettre à jour le magasin de certificats des clients
   ansible.builtin.command: update-ca-certificates
+  changed_when: true
   delegate_to: "{{ item.item }}"
   loop: "{{ openldap_trust.results | selectattr('changed') | list }}"
   loop_control:

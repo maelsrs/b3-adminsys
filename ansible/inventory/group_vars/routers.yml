@@ -1,3 +1,4 @@
+---
 router_mgmt_if: eth0
 
 # Les réseaux internes passent dans le vxlan de Proxmox (en-tête de 50 octets)

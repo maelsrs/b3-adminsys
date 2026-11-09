@@ -1,3 +1,4 @@
+---
 # ad_domain, ad_base, ad_admin… : group_vars/all/ad.yml (partagés avec les membres Linux)
 
 # Le DC qui crée la forêt (et porte les objets de l'annuaire) ; les autres DC la rejoignent

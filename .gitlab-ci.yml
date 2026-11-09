@@ -1,0 +1,54 @@
+---
+# MC12 : chaque push est vérifié (lint), le déploiement part d'un clic, sur main seulement.
+#   lint   → runners partagés de gitlab.com, à chaque push et merge request
+#   deploy → notre runner (tag loginord), sur le portable qui voit les VM par le VPN
+stages: [lint, deploy]
+
+# Pas de pipeline en double (branche + merge request) : MR si elle existe, sinon la branche
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+lint:
+  stage: lint
+  image: python:3.12-slim
+  variables:
+    PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
+  cache:
+    key: lint
+    paths: [.cache/pip, ansible/collections]
+  before_script:
+    - pip install --quiet ansible-core ansible-lint yamllint
+    - cd ansible
+    - ansible-galaxy collection install -r requirements.yml -p collections
+    # Le lint tourne chez gitlab.com : jamais le mot de passe du vault. Le contrôle de syntaxe
+    # charge pourtant les vars_files ; des fichiers vides suffisent (copie jetable du dépôt)
+    - for f in vault/*.yml; do echo '--- {}' > "$f"; done
+    - echo inutile > /tmp/vault_pass && export ANSIBLE_VAULT_PASSWORD_FILE=/tmp/vault_pass
+  script:
+    - yamllint .
+    - ansible-lint --offline
+
+deploy:
+  stage: deploy
+  tags: [loginord]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  # Un seul déploiement à la fois : deux playbooks sur les mêmes VM se marcheraient dessus
+  resource_group: loginord
+  variables:
+    # VAULT_PASS : variable CI protégée, masquée, de type fichier → son chemin, pas son contenu
+    ANSIBLE_VAULT_PASSWORD_FILE: $VAULT_PASS
+    ANSIBLE_FORCE_COLOR: "true"
+    # Modifiables au clic (« Run job » → variables) : déployer un hôte ou un tag seulement.
+    # Les routeurs et openvpn refusent encore la clé d'Ansible : exclus tant que ce n'est pas réparé
+    LIMIT: "all:!routers:!openvpn"
+    TAGS: ""
+  # Exécuteur shell : l'Ansible, les collections et la clé SSH du portable
+  script:
+    - cd ansible
+    - ansible-playbook site.yml --limit "$LIMIT" ${TAGS:+--tags "$TAGS"}

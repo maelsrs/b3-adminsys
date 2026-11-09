@@ -1,3 +1,4 @@
+---
 - name: AD-Domain-Services
   ansible.windows.win_feature:
     name: AD-Domain-Services

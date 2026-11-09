@@ -1,3 +1,4 @@
+---
 # MC08. Pas de module Ansible pour les GPO : du PowerShell qui lit, compare, puis agit.
 # Sans ça, chaque passage réécrit la GPO et incrémente sa version : les machines la
 # réappliquent pour rien.

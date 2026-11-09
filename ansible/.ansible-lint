@@ -1,0 +1,12 @@
+---
+# Règles Ansible vérifiées par la CI (MC12)
+profile: production
+exclude_paths:
+  - collections/
+  - .facts/
+  - vault/
+  - files/
+skip_list:
+  # Variables partagées entre rôles par conception, définies dans l'inventaire :
+  # wg_* (router, wireguard, frr), ospf_*, partages (win_shares et la GPO de lecteurs)
+  - var-naming[no-role-prefix]

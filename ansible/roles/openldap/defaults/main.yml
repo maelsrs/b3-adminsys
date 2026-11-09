@@ -1,3 +1,4 @@
+---
 openldap_domain: example.internal
 openldap_organization: Example
 # dc=loginord,dc=internal pour loginord.internal

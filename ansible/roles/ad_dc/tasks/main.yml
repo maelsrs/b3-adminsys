@@ -1,3 +1,4 @@
+---
 # Les tâches avancent en parallèle sur tous les DC : l'ordre ci-dessous garantit que la forêt
 # et les sites existent avant qu'un autre DC ne la rejoigne.
 - name: Forêt AD (racine)

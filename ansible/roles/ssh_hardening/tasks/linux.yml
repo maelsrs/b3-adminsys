@@ -1,3 +1,4 @@
+---
 - name: Créer le groupe ssh-admins
   ansible.builtin.group:
     name: "{{ ssh_hardening_group }}"

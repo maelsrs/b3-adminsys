@@ -1,3 +1,4 @@
+---
 # Vérifications MC05, en lecture seule : ansible-playbook playbooks/verif_ad.yml
 - name: État de la réplication AD
   hosts: domain_controllers
@@ -25,7 +26,7 @@
                             Sort-Object SamAccountName | ForEach-Object SamAccountName)
           }
       become: true
-      become_method: runas
+      become_method: ansible.builtin.runas
       become_user: "{{ ad_admin }}"
       vars:
         ansible_become_password: "{{ ad_admin_password }}"

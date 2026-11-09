@@ -1,3 +1,4 @@
+---
 - name: Baseline commune Linux et Windows
   hosts: all
   vars_files:

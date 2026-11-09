@@ -1,3 +1,4 @@
+---
 # Vérifications MC11 : ansible-playbook playbooks/verif_trackr.yml
 # kill -9 → TrackR revient seul ; une sauvegarde se restaure sur une base de test.
 - name: TrackR survit à un kill -9, sa sauvegarde se restaure
@@ -16,12 +17,12 @@
         status_code: 201
 
     - name: PID avant
-      ansible.builtin.command: systemctl show -p MainPID --value trackr
+      ansible.builtin.systemd_service:
+        name: trackr
       register: avant
-      changed_when: false
 
-    - name: kill -9
-      ansible.builtin.command: kill -9 {{ avant.stdout }}
+    - name: Tuer TrackR (kill -9)
+      ansible.builtin.command: kill -9 {{ avant.status.MainPID }}
       changed_when: true
 
     # RestartSec=5 : TrackR doit répondre de nouveau en quelques secondes
@@ -34,9 +35,9 @@
       delay: 1
 
     - name: PID après
-      ansible.builtin.command: systemctl show -p MainPID --value trackr
+      ansible.builtin.systemd_service:
+        name: trackr
       register: apres
-      changed_when: false
 
     - name: Sauvegarde maintenant (le même service que le timer)
       ansible.builtin.systemd_service:
@@ -55,23 +56,28 @@
         psql -Atc 'SELECT count(*) FROM livraisons' trackr_test
       args:
         executable: /bin/bash
+      become: true
       become_user: postgres
       register: restau
       changed_when: true
 
     - name: Prochaine sauvegarde, score de durcissement
-      ansible.builtin.shell: |
+      ansible.builtin.shell: |  # noqa: command-instead-of-module
+        set -o pipefail
         systemctl list-timers pg-backup.timer --no-pager | head -2
         systemd-analyze security trackr --no-pager | tail -1
+      args:
+        executable: /bin/bash
       register: infos
       changed_when: false
 
     - name: Résultat
       ansible.builtin.assert:
         that:
-          - apres.stdout != avant.stdout
+          - apres.status.MainPID != avant.status.MainPID
           - restau.stdout_lines[1] == restau.stdout_lines[2]
         success_msg: >-
-          kill -9 : PID {{ avant.stdout }} → {{ apres.stdout }} ;
-          restauré {{ restau.stdout_lines[0] | basename }} : {{ restau.stdout_lines[2] }} livraison(s) sur {{ restau.stdout_lines[1] }} ;
+          kill -9 : PID {{ avant.status.MainPID }} → {{ apres.status.MainPID }} ;
+          restauré {{ restau.stdout_lines[0] | basename }} :
+          {{ restau.stdout_lines[2] }} livraison(s) sur {{ restau.stdout_lines[1] }} ;
           {{ infos.stdout_lines | join(' | ') }}

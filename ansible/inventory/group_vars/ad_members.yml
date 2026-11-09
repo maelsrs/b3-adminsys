@@ -1,3 +1,4 @@
+---
 # Kerberos refuse plus de 5 min d'écart : l'heure vient des DC, pas d'Internet
 baseline_ntp_servers: "{{ ad_member_dcs }}"
 # W32Time annonce une incertitude (root dispersion) de quelques secondes, même toutes les 64 s

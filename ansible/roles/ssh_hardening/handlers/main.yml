@@ -1,3 +1,4 @@
+---
 - name: Valider sshd
   ansible.builtin.command: sshd -t
   listen: Recharger sshd

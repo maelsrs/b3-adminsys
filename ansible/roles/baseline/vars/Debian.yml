@@ -1,2 +1,3 @@
+---
 baseline_chrony_service: chrony
 baseline_admin_group: sudo

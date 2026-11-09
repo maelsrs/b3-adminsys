@@ -1,3 +1,4 @@
+---
 - name: Outils RAID, LVM, XFS, quotas
   ansible.builtin.apt:
     name: [mdadm, lvm2, xfsprogs, quota]
@@ -79,7 +80,7 @@
 # /etc/projects (id:répertoire), /etc/projid (nom:id), puis la limite : lire, comparer, agir
 - name: Quota de chaque projet
   ansible.builtin.shell: |
-    set -e
+    set -eo pipefail
     mnt=$(findmnt -n -o TARGET --target {{ item.path }})
     # Colonnes du rapport : #id, utilisé, souple, strict (Ko), …
     current=$(xfs_quota -x -c "report -p -n -N" "$mnt" | awk '$1 == "#{{ item.id }}" {print $4}')

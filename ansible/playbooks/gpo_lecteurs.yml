@@ -1,3 +1,4 @@
+---
 # MC08 : fabrique la sauvegarde de la GPO « USR - Lecteurs réseau » dans files/gpo/.
 # À lancer une fois, puis à chaque changement de `partages` ; le rôle ad_dc l'importe ensuite.
 #
@@ -36,9 +37,13 @@
           $drives = foreach ($p in $Partages) {
             $sid = (Get-ADGroup $p.groupe).SID.Value
             $uid = "{$([guid]::NewGuid().ToString().ToUpper())}"
-            "<Drive clsid=""{935D1B74-9CB8-4e3c-9914-7DD559B7A417}"" name=""$($p.lettre):"" status=""$($p.lettre):"" image=""2"" changed=""$now"" uid=""$uid"" bypassErrors=""1"">" +
-            "<Properties action=""U"" thisDrive=""NOCHANGE"" allDrives=""NOCHANGE"" userName="""" path=""\\$Server.$Domain\$($p.nom)"" label=""$($p.nom)"" persistent=""1"" useLetter=""1"" letter=""$($p.lettre)""/>" +
-            "<Filters><FilterGroup bool=""AND"" not=""0"" name=""$Netbios\$($p.groupe)"" sid=""$sid"" userContext=""1"" primaryGroup=""0"" localGroup=""0""/></Filters>" +
+            "<Drive clsid=""{935D1B74-9CB8-4e3c-9914-7DD559B7A417}"" name=""$($p.lettre):"" status=""$($p.lettre):"" " +
+            "image=""2"" changed=""$now"" uid=""$uid"" bypassErrors=""1"">" +
+            "<Properties action=""U"" thisDrive=""NOCHANGE"" allDrives=""NOCHANGE"" userName="""" " +
+            "path=""\\$Server.$Domain\$($p.nom)"" label=""$($p.nom)"" persistent=""1"" useLetter=""1"" " +
+            "letter=""$($p.lettre)""/>" +
+            "<Filters><FilterGroup bool=""AND"" not=""0"" name=""$Netbios\$($p.groupe)"" sid=""$sid"" " +
+            "userContext=""1"" primaryGroup=""0"" localGroup=""0""/></Filters>" +
             "</Drive>"
           }
           $xml = '<?xml version="1.0" encoding="utf-8"?>' + "`r`n" +
@@ -58,11 +63,13 @@
 
           Remove-Item $Out -Recurse -Force -ErrorAction SilentlyContinue
           New-Item $Out -ItemType Directory | Out-Null
-          Backup-GPO -Guid $gpo.Id -Path $Out -Comment 'Lecteurs réseau des services (playbooks/gpo_lecteurs.yml)' | Out-Null
+          $comment = 'Lecteurs réseau des services (playbooks/gpo_lecteurs.yml)'
+          Backup-GPO -Guid $gpo.Id -Path $Out -Comment $comment | Out-Null
           Remove-GPO -Guid $gpo.Id
 
           # Chemins relatifs, en / (Windows les accepte). -Force : bkupInfo.xml et manifest.xml sont cachés
-          Get-ChildItem $Out -Recurse -File -Force | ForEach-Object { $_.FullName.Substring($Out.Length + 1).Replace('\', '/') }
+          Get-ChildItem $Out -Recurse -File -Force |
+            ForEach-Object { $_.FullName.Substring($Out.Length + 1).Replace('\', '/') }
       register: gpo_backup
 
     - name: Repartir d'un dossier vide dans le dépôt

@@ -1,3 +1,4 @@
+---
 router_interfaces:
   - name: eth1
     role: lan

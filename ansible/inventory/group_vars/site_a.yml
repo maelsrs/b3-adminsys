@@ -1,3 +1,4 @@
+---
 site_name: site_a
 # Site AD des machines de ce site (doit exister dans ad_sites)
 ad_site: Lille

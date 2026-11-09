@@ -1,3 +1,4 @@
+---
 # Storage Spaces = RAID + LVM côté Windows : disques → pool → disque virtuel en miroir → volume.
 # Le lecteur CD (virtio-win) occupe souvent D: : on le pousse en Z: d'abord.
 - name: Pool en miroir et volume D
@@ -13,11 +14,13 @@
       if (-not (Get-StoragePool -FriendlyName $Pool -ErrorAction SilentlyContinue)) {
         $disks = @(Get-PhysicalDisk -CanPool $true)
         if ($disks.Count -lt 2) { throw "Miroir impossible : $($disks.Count) disque(s) disponible(s), il en faut 2" }
-        New-StoragePool -FriendlyName $Pool -StorageSubSystemFriendlyName 'Windows Storage*' -PhysicalDisks $disks | Out-Null
+        New-StoragePool -FriendlyName $Pool -StorageSubSystemFriendlyName 'Windows Storage*' `
+          -PhysicalDisks $disks | Out-Null
         $Ansible.Changed = $true
       }
       if (-not (Get-VirtualDisk -FriendlyName "v$Pool" -ErrorAction SilentlyContinue)) {
-        New-VirtualDisk -StoragePoolFriendlyName $Pool -FriendlyName "v$Pool" -ResiliencySettingName Mirror -UseMaximumSize | Out-Null
+        New-VirtualDisk -StoragePoolFriendlyName $Pool -FriendlyName "v$Pool" -ResiliencySettingName Mirror `
+          -UseMaximumSize | Out-Null
         $Ansible.Changed = $true
       }
       if (-not (Get-Volume -DriveLetter $Drive -ErrorAction SilentlyContinue)) {
@@ -123,7 +126,7 @@
       }
   # SYSTEM : New-SmbShare doit ouvrir le dossier, et les admins ne le peuvent plus sur RH
   become: true
-  become_method: runas
+  become_method: ansible.builtin.runas
   become_user: SYSTEM
   # La racine (nom vide) : tous les utilisateurs du domaine, l'ABE trie ce que chacun voit
   loop: "{{ [{'nom': '', 'acces': 'Domain Users'}] + partages }}"

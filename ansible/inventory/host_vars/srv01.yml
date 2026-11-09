@@ -1,3 +1,4 @@
+---
 # Serveur membre à Lille (MC08) : cible des GPO de l'OU Serveurs, partages des services.
 # ISO française et pas de sysprep sur le modèle : le compte local reste Administrateur (un
 # membre garde ses comptes locaux, pas besoin du renommage de win01).

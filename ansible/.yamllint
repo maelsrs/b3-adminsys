@@ -1,0 +1,21 @@
+---
+# Style YAML vérifié par la CI (MC12). Réglages compatibles avec ansible-lint.
+extends: default
+ignore: |
+  collections/
+  .facts/
+  vault/
+rules:
+  # 80 colonnes coupent les commandes PowerShell en plein milieu : 120, comme le README
+  line-length:
+    max: 120
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: false
+  braces:
+    max-spaces-inside: 1
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true
+  truthy:
+    allowed-values: ["true", "false"]
