@@ -1,114 +1,292 @@
-# Oral LogiNord : quoi dire, quoi montrer
+# Oral LogiNord : 10 minutes
 
-Le client n'est pas informaticien (« expliquez-moi simplement »). Règle : **son problème → ce
-qu'on a fait, en une phrase simple → la preuve à l'écran**. Le détail technique vient
-seulement si le jury creuse (voir le README, sections « Points à expliquer à l'oral »).
+Le client n'est pas informaticien. Règle de chaque bloc : **son problème → ce qu'on a fait, en
+une phrase → la preuve à l'écran**. Le détail technique seulement si le jury creuse (README).
 
-## 1. Le pitch (1 minute)
+Tout ce qui suit a été testé le 9/11 depuis le portable, VPN connecté.
+
+## 1. Les accès
+
+Mots de passe : `ansible-vault view vault/secrets.yml`, **dans un terminal non projeté**, avant
+l'oral. Jamais à l'écran.
+
+| Machine | IP | Pour entrer | Compte | Mot de passe (vault) |
+|---|---|---|---|---|
+| VPN | → 10.1.0.0/16 | `cd ~/Downloads && sudo openvpn mael.ovpn` | | |
+| deb01 (Debian, Lille) | 10.1.10.20 | `ssh ansible@10.1.10.20` | ansible | clé SSH, sudo sans mot de passe |
+| ldap01 (prestataires) | 10.1.10.21 | `ssh ansible@10.1.10.21` | ansible | clé SSH |
+| db01 (TrackR, Dunkerque) | 10.1.20.21 | `ssh ansible@10.1.20.21` | ansible | clé SSH |
+| **TrackR** | 10.1.20.21 | **http://10.1.20.21:8080** (Firefox) | paul.durand | `vault_pwd_init` |
+| win02 (DC Lille) | 10.1.10.10 | `ssh Administrator@10.1.10.10` puis `powershell` | Administrator | `vault_win_password` |
+| win01 (DC Dunkerque) | 10.1.20.30 | `ssh Administrator@10.1.20.30` puis `powershell` | Administrator | `vault_win_password` |
+| srv01 (fichiers Lille) | 10.1.10.30 | `ssh Administrateur@10.1.10.30` puis `powershell` | Administrateur | `vault_win_password` |
+| Partages Windows | 10.1.10.30 | `smbclient //10.1.10.30/Partages -U 'LOGINORD\alice.martin' -c ls` | un salarié | `vault_pwd_init` |
+| OpenLDAP | 10.1.10.21 | `ldapsearch -x -ZZ -H ldap://ldap01.loginord.internal …` | cn=admin | `vault_ldap` |
+
+**Montrer Windows** : les serveurs sont en Server Core (pas de bureau). On y entre en **SSH**
+depuis le portable (mot de passe), on tape `powershell`, et on lance les commandes du bloc. Les
+partages se montrent avec **`smbclient`** depuis le portable : c'est exactement ce qu'un salarié
+verrait, mais sans avoir besoin d'un poste Windows.
+
+**Comptes de démo** (tous en `vault_pwd_init`) :
+
+| Compte | Qui | Ce qu'il doit se passer |
+|---|---|---|
+| paul.durand | quais, Dunkerque | entre dans TrackR |
+| alice.martin | compta, Lille | voit seulement `Compta` ; RH refusé ; TrackR refusé |
+| test2.test2 | informaticien | voit seulement `Adminsys` ; **RH refusé aussi** ; sudo sur deb01 |
+| chloe.petit | partie le 9/11 à 16:00 | `NT_STATUS_ACCOUNT_DISABLED` partout |
+
+## 2. La veille
+
+- [ ] VPN : `cd ~/Downloads && sudo openvpn mael.ovpn`, puis `ping 10.1.20.21`
+- [ ] Les empreintes SSH des Windows ont changé depuis la réinstallation (« Host key verification
+  failed ») : `ssh-keygen -R 10.1.10.10 && ssh-keygen -R 10.1.20.30 && ssh-keygen -R 10.1.10.30`,
+  puis une connexion à chaque pour accepter la nouvelle empreinte
+- [ ] `ansible all -m ping -l linux` et `ansible windows -m ansible.windows.win_ping -e @vault/secrets.yml`
+  (routeurs et openvpn : en échec, connu)
+- [ ] `ansible-playbook playbooks/verif_trackr.yml` : tout vert
+- [ ] RAID de db01 en `[UU]` : `ssh ansible@10.1.20.21 cat /proc/mdstat`
+- [ ] Répéter une fois en chronométrant
+- [ ] **Si l'oral tombe un dimanche** : ne pas lancer `campagne.yml` (il mettrait vraiment à jour)
+
+## 3. L'écran, 10 minutes avant
+
+Terminal en grosse police (Ctrl + +), un onglet par rôle :
+
+| Onglet | Commande d'ouverture |
+|---|---|
+| T1 portable | `cd ~/Documents/b3-adminsys/ansible` |
+| T2 db01 | `ssh ansible@10.1.20.21` |
+| T3 win01 | `ssh Administrator@10.1.20.30`, puis `powershell` |
+| T4 Ansible | `cd ~/Documents/b3-adminsys/ansible` (lancé au début, regardé à la fin) |
+
+Firefox, dans l'ordre :
+
+1. Le dépôt GitHub, le README (le schéma s'affiche)
+2. `inventory/group_vars/all/personnel.yml` sur GitHub
+3. http://10.1.20.21:8080 (page de connexion TrackR)
+4. `ansible/rapports/maj-2026-11-09.html` (glisser le fichier dans Firefox)
+
+## 4. Le déroulé
+
+Les temps sont des repères. Si on est en retard, sauter ce qui est marqué *(si le temps)*.
+
+### 0:00 · Le pitch (1 min) · Firefox onglet 1, le schéma
+
+À lancer **avant de parler**, dans T4 : `ansible-playbook site.yml -l deb01` (on regarde le
+résultat à la fin).
 
 > LogiNord, c'est deux sites, Lille et Dunkerque, reliés par une liaison qui coupe tous les
-> mois. On a construit une infrastructure où **Dunkerque continue de travailler seul** quand la
-> liaison tombe, où **chacun a un seul identifiant**, où **les salaires ne sortent pas des RH**,
-> et où **tout est écrit sous forme de code** : si votre informaticien part, un autre relance
-> une commande et reconstruit tout à l'identique. Le tout avec des logiciels libres et des
-> machines virtuelles, sans licence en plus de Windows Server.
+> mois. On a construit une infrastructure où **Dunkerque continue de travailler seul**, où
+> **chacun a un seul identifiant**, où **les salaires ne sortent pas des RH**, et où **tout est
+> écrit** : si votre informaticien part, un autre relance une commande et reconstruit tout.
+> Avec des logiciels libres, sans licence en plus de Windows Server.
 
-## 2. Les problèmes du client, nos réponses
+Sur le schéma : à gauche Lille (siège, DC racine, serveur de fichiers), à droite Dunkerque (son
+propre DC, TrackR et sa base), entre les deux un tunnel chiffré.
 
-| Le client a dit | Ce qu'on a fait | La preuve |
-|---|---|---|
-| « La liaison avec Dunkerque coupe tous les mois » | Un contrôleur de domaine **dans chaque site** (win02 Lille, win01 Dunkerque), DNS et DHCP locaux ; TrackR et sa base **à Dunkerque** | Démo couper le lien (§4) ; `nltest /dsgetsite` |
-| « TrackR ne doit jamais bloquer les camions » | TrackR = service systemd qui **redémarre seul** ; base sur **RAID 1** ; connexion par le DC **de Dunkerque** d'abord | `kill -9` → relancé en 5 s (`verif_trackr.yml`) ; RAID dégradé, la base reste lisible |
-| « Ne plus jamais ressaisir des jours de travail » | Sauvegarde **toutes les heures** (perte max : 1 h), **testée** par restauration | `pg_restore` dans `trackr_test`, même nombre de lignes |
-| « Le serveur compta est tombé l'hiver dernier » | Partages sur deux disques en miroir (Storage Spaces) ; clichés VSS à 7 h et 12 h | `Get-VirtualDisk` : Mirror Healthy ; fichier supprimé puis restauré |
-| « Le chef parti se connectait encore » / « un accès coupé le soir même » | **Un seul annuaire** (AD) pour Windows et Linux ; le départ est une ligne dans `personnel.yml` avec son heure : compte désactivé (jamais supprimé), retiré de ses groupes, refusé sur les Debian même hors ligne. Réplication **immédiate** entre sites (notification) | Désactiver un compte à Lille : refusé à Dunkerque quelques secondes après (à répéter avant l’oral) |
-| « Les salaires ont fuité » | Partage RH : **seul le groupe RH**, même pas les admins IT ; les autres **ne voient même pas** le dossier (ABE) | alice (compta) ne voit que `Compta`, `\\srv01\RH` : accès refusé |
-| « Les serveurs se remplissent de n'importe quoi » | **Quotas stricts** : 5 Go par service (Windows), 200 Mo pour le dépôt des devs (Linux) | Copie de 5,1 Go refusée ; `dd` coupé à 200 Mo |
-| « Un seul identifiant par personne » | Comptes AD pour tout le monde, y compris pour se connecter aux Debian (Kerberos/SSSD) | test2 entre en SSH sur deb01 avec son compte Windows ; paul (quais) entre dans TrackR, alice (compta) refusée |
-| « Le presta ne voit pas tout » | Prestataires dans un **annuaire séparé** (OpenLDAP), jamais dans l'AD | `ldapsearch` : jdupont n'existe que dans ldap01 |
-| « Intervenir de chez soi la nuit sans ouvrir la porte aux pirates » | **VPN** obligatoire ; SSH par clé uniquement, root refusé, groupes autorisés seulement | `ssh root@…` refusé, `ssh` sans clé refusé |
-| « Savoir qui fait quoi » | Comptes **nominatifs**, compte admin séparé (`adm-test2`) avec mot de passe renforcé (16 car., PSO) ; historique Git de chaque changement | `git log` ; `Get-ADUserResultantPasswordPolicy adm-test2` |
-| « Si mon informaticien part, un autre doit tout reconstruire » / « tout doit être écrit » | **Tout est en Ansible** + README ; mots de passe chiffrés (vault) | `ansible-playbook site.yml` → `changed=0` au 2e passage |
-| « On pense ouvrir un troisième site » | Les sites sont une **liste** dans le code : OU, sous-réseaux, DHCP, liens AD se génèrent | Montrer `ad_sites` dans l'inventaire |
-| « Budget serré, aucun arrêt, des résultats vite » | Logiciels libres, clones liés Proxmox (un disque ne stocke que ses différences), déploiement par morceaux (`--tags`, `-l`) sans arrêter le reste | — |
-| « Ce sont les RH qui décident » | `personnel.yml` : les RH le modifient par pull request, et CODEOWNERS rend leur validation obligatoire. Git garde qui a demandé, qui a validé, quand | `git log -p inventory/group_vars/all/personnel.yml` ; `verif_personnel.yml` |
-| « L'assureur veut la preuve que tout est à jour » | Correctifs de sécurité **chaque jour** (Linux), campagne **le dimanche** machine par machine, jamais les deux DC ensemble ; un **rapport daté** lisible sans être informaticien | `rapports/maj-….html` ; une campagne lancée un lundi est refusée |
+### 1:00 · « Quelqu'un part : accès coupé le soir même » (2 min)
 
-**À venir (le dire franchement)** : alerte quand TrackR tombe (MC15).
+> Ce ne sont pas les informaticiens qui décident, ce sont les RH. Ils ont un fichier, une ligne
+> par personne. Chloé quitte l'entreprise : les RH ont écrit sa date et son heure de départ.
 
-## 3. Les images pour un non-informaticien
+Firefox onglet 2 : la ligne `chloe.petit … depart: 2026-11-09T16:00`, puis *History* : on voit qui
+l'a demandé et quand.
+
+> À 16 h, son compte a été désactivé, partout. Jamais supprimé : la compta récupère ses
+> fichiers, et la trace reste.
+
+T3 (win01, **le DC de Dunkerque** : le changement fait à Lille est déjà arrivé) :
+
+```powershell
+Get-ADUser chloe.petit | ft Name,Enabled,DistinguishedName
+```
+
+→ `False`, rangée dans `OU=Départs`.
+
+T1 : elle essaie d'ouvrir les fichiers (mot de passe : `vault_pwd_init`)
+
+```sh
+smbclient //10.1.10.30/Partages -U 'LOGINORD\chloe.petit' -c ls
+```
+
+→ `NT_STATUS_ACCOUNT_DISABLED`.
+
+*(si le temps)* Même chose côté Linux, même hors ligne :
+`ssh ansible@10.1.10.20 sudo sssctl user-checks chloe.petit | grep pam_acct` → `Permission denied`.
+
+### 3:00 · « Les salaires ont fuité » (1 min 30)
+
+> Le dossier RH, seuls les RH l'ouvrent. Même pas nous, les informaticiens. Et les autres ne le
+> voient même pas.
+
+T1 :
+
+```sh
+smbclient //10.1.10.30/Partages -U 'LOGINORD\alice.martin' -c ls   # Alice (compta) : seulement Compta
+smbclient //10.1.10.30/RH -U 'LOGINORD\alice.martin' -c ls         # NT_STATUS_ACCESS_DENIED
+smbclient //10.1.10.30/RH -U 'LOGINORD\test2.test2' -c ls          # l'informaticien : refusé aussi
+```
+
+> Et le serveur compta tombé l'hiver dernier : ses données sont sur deux disques en miroir.
+
+*(si le temps)* T1 : `ansible srv01 -e @vault/secrets.yml -m ansible.windows.win_shell -a 'Get-VirtualDisk | ft FriendlyName,ResiliencySettingName,HealthStatus'`
+→ `vData Mirror Healthy` (10 s).
+
+### 4:30 · TrackR : « ne doit jamais bloquer les camions » (3 min) · le moment fort
+
+**Un seul identifiant.** Firefox onglet 3 :
+
+1. `alice.martin` → refusée (elle est à la compta, pas aux quais).
+2. `paul.durand` (son mot de passe Windows) → il entre. Créer une expédition `ORAL-001`.
+
+> Paul n'a pas de mot de passe TrackR : c'est celui de Windows. Le jour où il part, il ne rentre
+> plus dans TrackR non plus, sans rien toucher.
+
+**On casse TrackR.** T2 :
+
+```sh
+sudo kill -9 $(systemctl show -p MainPID --value trackr)    # on tue l'appli, brutalement
+systemctl status trackr --no-pager | head -3                 # « activating (auto-restart) »
+```
+
+Recharger Firefox : erreur. Attendre 5 secondes, recharger : **TrackR est revenu**, `ORAL-001`
+est toujours là.
+
+> Un gardien relance l'appli si elle cale, en 5 secondes, sans personne.
+
+```sh
+sudo journalctl -u trackr -n 6 --no-pager # l'arrêt, le redémarrage, la connexion de Paul
+```
+
+**On casse un disque.** T2 :
+
+```sh
+cat /proc/mdstat                                          # [UU] : deux disques
+D=$(readlink -f /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi2)
+sudo mdadm /dev/md0 --fail $D && sudo mdadm /dev/md0 --remove $D
+cat /proc/mdstat                                          # [U_] : un disque mort
+```
+
+Firefox : créer `ORAL-002` → **ça marche**, la base tourne sur un seul disque.
+
+```sh
+sudo mdadm /dev/md0 --add $D && cat /proc/mdstat         # reconstruction en cours
+```
+
+> Et si quelqu'un supprime des données par erreur ? Le miroir supprime des deux côtés. D'où une
+> sauvegarde toutes les heures, et on vérifie qu'elle se restaure.
+
+```sh
+sudo ls -lt /var/backups/pg | head -3                    # une sauvegarde par heure
+systemctl list-timers pg-backup.timer --no-pager         # la prochaine
+```
+
+### 7:30 · « La liaison coupe tous les mois » (1 min) · T3, win01
+
+> Dunkerque a son propre contrôleur de domaine : le registre du personnel et le guichet qui
+> vérifie les badges. Liaison coupée, les gens de Dunkerque se connectent quand même, et TrackR
+> est à Dunkerque, à côté des camions.
+
+```powershell
+nltest /dsgetsite            # Dunkerque
+Get-ADReplicationPartnerMetadata -Target win01 | ft Partner,LastReplicationSuccess,LastReplicationResult
+# dernière synchro avec Lille il y a quelques minutes, résultat 0 = aucune erreur
+```
+
+> Quand on change quelque chose à Lille, Lille téléphone à Dunkerque tout de suite, au lieu
+> d'attendre la tournée du facteur.
+
+On ne coupe pas le lien en direct : notre VPN arrive à Lille, couper le tunnel nous couperait
+aussi de Dunkerque. Si le jury insiste : README « Démo : couper le lien », à la console Proxmox.
+
+### 8:30 · « L'assureur veut la preuve » et « tout doit être écrit » (1 min)
+
+Firefox onglet 4 : le rapport. Une ligne par machine, en français, daté.
+
+T1 :
+
+```sh
+ansible-playbook playbooks/campagne.yml   # refusé : « Nous sommes lundi … : les camions roulent »
+```
+
+> Les mises à jour lourdes se font le dimanche, dépôt fermé, une machine à la fois, jamais les
+> deux contrôleurs ensemble. Le reste de la semaine, la commande refuse.
+
+T4 : le récapitulatif lancé au début → `changed=0`.
+
+> On a relancé toute la recette sur une machine : rien n'a changé, tout est déjà conforme. Si
+> votre informaticien part, le suivant relance la même commande.
+
+### 9:30 · Conclusion (30 s)
+
+> Ce qui reste : être **prévenu** quand TrackR ou un disque tombe (la supervision, notre
+> prochaine étape), et une copie des sauvegardes sur l'autre site.
+
+## 5. Si ça casse pendant l'oral
+
+| Panne | Réaction |
+|---|---|
+| Le VPN tombe | `cd ~/Downloads && sudo openvpn mael.ovpn` dans un onglet à part ; pendant ce temps, parler sur le schéma |
+| TrackR ne revient pas après le kill | `sudo systemctl start trackr` ; puis `sudo journalctl -u trackr -n 20` |
+| smbclient muet ou lent | ajouter `-m SMB3` ; sinon montrer le tableau de tests du README (MC10) |
+| SSH Windows refusé (empreinte) | `ssh-keygen -R <ip>` puis reconnecter |
+| Le RAID ne reconstruit pas | `sudo mdadm /dev/md0 --add $D` de nouveau ; le dire : « c'est le cas où l'alerte servirait » |
+| `site.yml` pas fini à 8:30 | ne pas attendre : le montrer en fin de questions |
+| Plus de temps du tout | sauter les *(si le temps)* et le bloc 7:30 (le garder pour les questions) |
+
+## 6. Les images pour un non-informaticien
 
 | Notion | En une image |
 |---|---|
 | Ansible | Une **recette** écrite : on la relance, on obtient le même plat |
-| Idempotence (`changed=0`) | Relancer la recette ne rajoute pas le sel une deuxième fois |
+| `changed=0` | Relancer la recette ne rajoute pas le sel une deuxième fois |
 | Contrôleur de domaine | Le **registre du personnel** + le guichet qui vérifie les badges, un par site |
-| Kerberos | Un **bracelet de festival** : on montre ses papiers une fois à l'entrée, puis le bracelet ouvre les stands. Le mot de passe ne circule jamais |
-| Notification entre sites | Le DC de Lille **téléphone** à Dunkerque à chaque changement, au lieu d'attendre la tournée du facteur (toutes les 15 min) |
+| Kerberos | Un **bracelet de festival** : papiers une fois à l'entrée, puis le bracelet ouvre les stands |
+| Réplication avec notification | Lille **téléphone** à Dunkerque au lieu d'attendre le facteur |
 | AGDLP | Le badge du service ouvre les portes du service ; on change une personne de service, pas les serrures |
 | ABE | On ne voit même pas les portes qu'on ne peut pas ouvrir |
-| RAID 1 / miroir | Deux carnets écrits en même temps : on en perd un, l'autre suffit. **Mais** une page arrachée l'est dans les deux : ce n'est pas une sauvegarde |
+| RAID 1 | Deux carnets écrits en même temps. **Mais** une page arrachée l'est dans les deux |
 | Clichés VSS | Une **photo** du classeur à 7 h et à midi |
-| Sauvegarde horaire | Le client accepte de perdre au plus une heure de saisie |
 | systemd `Restart=` | Un **gardien** qui relance la machine si elle cale |
-| Timer | Un réveil, avec carnet de bord (`journalctl`) |
 | Quota | Une étagère par service, de taille fixe |
 | VPN | Un **tunnel privé** : de l'extérieur, on ne voit pas ce qui y passe |
 | Vault | Un coffre-fort dans le dépôt : le code est lisible, les mots de passe non |
 
-## 4. Les démos (ordre conseillé)
-
-Avant l'oral : VPN connecté, toutes les VM allumées, puis
-`ansible all -m ping -l linux` et `ansible all -m ansible.windows.win_ping -l windows -e @vault/secrets.yml`.
-
-1. **Tout est code** (1 min) : `ansible-playbook site.yml -l deb01` → `changed=0`.
-2. **Un seul identifiant** (2 min) : `ansible-playbook playbooks/verif_linux_ad.yml` : test2 entre
-   avec sudo, bob entre sans sudo, alice refusée.
-3. **Salaires protégés** (2 min) : en alice, `\\srv01\Partages` ne montre que Compta ; RH refusé.
-4. **TrackR increvable** (2 min) : `ansible-playbook playbooks/verif_trackr.yml` : kill -9,
-   PID qui change, restauration, prochaine sauvegarde.
-5. **Panne de disque** (3 min, si le temps) : `mdadm --fail` sur db01, `[U_]`, la base répond,
-   `--add`, reconstruction.
-6. **Couper le lien** (la démo de la soutenance selon le MC05) : README « Démo : couper le lien ».
-   ⚠️ Pas encore répétée depuis le passage par le VPN (à refaire avec un VPN par site).
-
-## 5. Questions probables du jury
+## 7. Questions probables du jury
 
 - **Pourquoi `loginord.internal` et pas `.local` ?** `.local` est réservé au mDNS (Bonjour,
-  Avahi) : conflits de résolution sur Linux et Mac. `.internal` est réservé pour l'usage privé.
-- **Pourquoi deux annuaires (AD + OpenLDAP) alors que le client veut un seul identifiant ?**
-  Un seul identifiant **par salarié**. Les prestataires n'ont pas à entrer dans l'AD : un compte
-  AD donne par défaut accès à beaucoup de choses (lecture de l'annuaire, partages « Utilisateurs
-  du domaine »). Annuaire séparé = surface réduite, contrat de 3 mois facile à couper.
-- **Le RAID suffit-il ?** Non : il protège du matériel, pas d'une suppression ni d'un
-  rançongiciel. D'où la sauvegarde horaire testée (et la copie sur l'autre site, à faire).
-- **Si win02 (Lille) tombe ?** Dunkerque authentifie seul. Les rôles FSMO sont tous sur win02 :
-  pas de nouveau DC ni de changement de schéma tant qu'il est absent ; s'il est perdu, on
-  **saisit** les rôles sur win01 (`Move-ADDirectoryServerOperationMasterRole -Force`).
-- **Pourquoi l'heure est-elle critique ?** Kerberos refuse plus de 5 min d'écart. La racine
-  (PDC) se cale sur des serveurs NTP publics, les autres DC sur la hiérarchie (`NT5DS`), les
-  Debian sur les DC (chrony).
-- **Un salarié part, que se passe-t-il sur Linux hors ligne ?** SSSD garde un cache : utile lien
-  coupé, mais un compte parti peut encore entrer hors ligne. `sss_cache -E` fait partie de la
-  procédure de départ (MC13).
-- **Où sont les mots de passe ?** Chiffrés dans `vault/secrets.yml` (AES-256), jamais en clair
-  dans le dépôt ni dans les journaux (`no_log`). Le compte TrackR n'en a pas : authentification
-  *peer* (le compte Linux = le compte PostgreSQL).
-- **Les admins IT ne peuvent pas ouvrir RH : et en cas de problème ?** Ils restent
-  **propriétaires** du dossier : ils peuvent reprendre la main, mais par un geste volontaire,
-  visible dans les journaux, jamais par défaut.
-- **Pourquoi TrackR à Dunkerque et pas au siège ?** Les camions sont à Dunkerque : lien coupé,
-  l'appli et sa base sont du même côté que ses utilisateurs.
+  Avahi) : conflits sur Linux et Mac. `.internal` est réservé à l'usage privé.
+- **Deux annuaires (AD + OpenLDAP), alors qu'on veut un seul identifiant ?** Un seul identifiant
+  **par salarié**. Les prestataires n'entrent pas dans l'AD, où un compte voit beaucoup par
+  défaut. Annuaire séparé : surface réduite, mission de 3 mois facile à couper (`expiration`).
+- **Le RAID suffit-il ?** Non : il protège du matériel, pas d'une suppression ni d'un rançongiciel.
+  D'où la sauvegarde horaire testée.
+- **Si win02 (Lille) tombe ?** Dunkerque authentifie seul. Les rôles FSMO sont sur win02 : s'il
+  est perdu, on les **saisit** sur win01 (`Move-ADDirectoryServerOperationMasterRole -Force`).
+- **Pourquoi l'heure est-elle critique ?** Kerberos refuse plus de 5 min d'écart. Le PDC suit le
+  NTP public, les autres DC la hiérarchie (`NT5DS`), les Debian les DC (chrony).
+- **Un salarié parti, sur un Linux hors ligne ?** Le cache SSSD le laisserait entrer : les partis
+  sont refusés explicitement (`simple_deny_users`), sessions fermées, cache vidé.
+- **Où sont les mots de passe ?** Chiffrés dans `vault/secrets.yml` (AES-256), jamais dans les
+  journaux (`no_log`). TrackR n'a pas de mot de passe de base : authentification *peer*.
+- **Les admins ne peuvent pas ouvrir RH : et en cas de problème ?** Ils restent
+  **propriétaires** : ils peuvent reprendre la main, par un geste volontaire et journalisé.
+- **Qui valide un départ ?** Les RH, par pull request : CODEOWNERS rend leur validation
+  obligatoire sur `personnel.yml`. Git garde qui a demandé, qui a validé, quand.
+- **Un troisième site ?** Les sites sont une **liste** (`ad_sites`) : OU, sous-réseaux, DHCP et
+  liens AD se génèrent. Un site = une entrée de plus.
 - **Pourquoi des timers plutôt que cron ?** Journaux dans `journalctl`, prochaine exécution
-  visible (`list-timers`), rattrapage d'une exécution manquée (`Persistent=true`).
-- **Que veut dire le score 1.0 de `systemd-analyze security` ?** 0 = parfaitement isolé,
-  10 = aucune protection. TrackR ne peut écrire que dans `/var/lib/trackr`, n'a aucun
-  privilège, ne parle qu'au LAN.
+  visible, rattrapage d'une exécution manquée (`Persistent=true`).
+- **Le score 1.0 de `systemd-analyze security` ?** 0 = isolé au maximum, 10 = rien. TrackR n'écrit
+  que dans `/var/lib/trackr`, sans privilège, ne parle qu'au réseau interne.
+- **Intervenir la nuit de chez soi ?** VPN obligatoire, SSH par clé seulement, root refusé.
 
-## 6. Limites connues (les annoncer avant qu'on les trouve)
+## 8. Limites (les annoncer avant qu'on les trouve)
 
-- Tous les rôles FSMO sur win02 (acceptable à 2 DC, à revoir avec un 3e site).
-- Sauvegardes de TrackR sur la même machine : la copie vers Lille est le bonus MC11, pas fait.
-- Certificat OpenLDAP auto-signé, et lecture anonyme de l'annuaire prestataires (hors mots de passe).
-- rtr-a / rtr-b : l'accès SSH d'Ansible est à réparer à la console (`adduser ansible ssh-admins`).
-- Certificats LDAPS des DC auto-signés (pas d'AD CS) : à renouveler dans 5 ans, ou une PKI.
+- Pas encore d'alerte quand TrackR ou un disque tombe (MC15).
+- Sauvegardes de TrackR sur la même machine : la copie vers Lille n'est pas faite.
+- Tous les rôles FSMO sur win02 (acceptable à 2 DC).
+- Certificats auto-signés (OpenLDAP, LDAPS des DC) ; lecture anonyme de l'annuaire prestataires.
+- rtr-a / rtr-b et openvpn : Ansible n'y entre plus, à réparer à la console.
