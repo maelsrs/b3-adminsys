@@ -11,8 +11,8 @@ name: CI
   workflow_dispatch:
     inputs:
       limit:
-        description: Hôtes visés (--limit). Routeurs et openvpn exclus tant qu'Ansible n'y entre pas
-        default: "all:!routers:!openvpn"
+        description: Hôtes visés (--limit), par défaut tout le parc
+        default: "all"
       tags:
         description: Tags (--tags), vide = tout
         default: ""

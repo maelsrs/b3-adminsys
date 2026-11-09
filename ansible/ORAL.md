@@ -45,7 +45,7 @@ verrait, mais sans avoir besoin d'un poste Windows.
   failed ») : `ssh-keygen -R 10.1.10.10 && ssh-keygen -R 10.1.20.30 && ssh-keygen -R 10.1.10.30`,
   puis une connexion à chaque pour accepter la nouvelle empreinte
 - [ ] `ansible all -m ping -l linux` et `ansible windows -m ansible.windows.win_ping -e @vault/secrets.yml`
-  (routeurs et openvpn : en échec, connu)
+  (tout doit répondre)
 - [ ] `ansible-playbook playbooks/verif_trackr.yml` : tout vert
 - [ ] RAID de db01 en `[UU]` : `ssh ansible@10.1.20.21 cat /proc/mdstat`
 - [ ] `ansible-playbook playbooks/verif_supervision.yml` : toutes les cibles `up`, **aucune alerte en cours**
@@ -321,4 +321,3 @@ T4 : le récapitulatif lancé au début → `changed=0`.
 - Sauvegardes de TrackR sur la même machine : la copie vers Lille n'est pas faite.
 - Tous les rôles FSMO sur win02 (acceptable à 2 DC).
 - Certificats auto-signés (OpenLDAP, LDAPS des DC) ; lecture anonyme de l'annuaire prestataires.
-- rtr-a / rtr-b et openvpn : Ansible n'y entre plus, à réparer à la console.

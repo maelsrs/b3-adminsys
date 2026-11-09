@@ -783,7 +783,7 @@ auto-hébergé*, merge request → *pull request*, variable CI → *secret*.
   dans un fichier temporaire (`umask 077`), le passe par `ANSIBLE_VAULT_PASSWORD_FILE`, et
   l'efface même en cas d'échec. Côté Ansible, `no_log` sur les tâches qui manient des mots de passe.
 - **Au clic**, on peut changer `limit` (`db01`) et `tags` (`trackr`). `concurrency` : jamais deux
-  déploiements en même temps. Routeurs et openvpn exclus par défaut tant qu'Ansible n'y entre pas.
+  déploiements en même temps.
 - **Dépôt public + runner auto-hébergé** : une pull request venue d'un fork ne doit jamais
   s'exécuter sur le portable : le lint saute les PR venues d'un fork, et le `deploy` ne part que
   d'un `workflow_dispatch` (réservé à qui a le droit d'écriture).
