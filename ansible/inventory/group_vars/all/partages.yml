@@ -1,0 +1,16 @@
+# Partages des services : servis par srv01 (win_shares), montés en lecteur réseau par la
+# GPO « USR - Lecteurs réseau » (MC08). Qui monte = le GG (qui), droits NTFS = le DL (quoi).
+partages_serveur: srv01
+partages:
+  - nom: Compta
+    lettre: S
+    groupe: GG_Compta
+    acces: DL_Partage_Compta_RW
+  - nom: Direction
+    lettre: T
+    groupe: GG_Direction
+    acces: DL_Partage_Direction_RW
+  - nom: Adminsys
+    lettre: U
+    groupe: GG_Adminsys
+    acces: DL_Partage_Adminsys_RW

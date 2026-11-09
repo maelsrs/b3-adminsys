@@ -1,0 +1,55 @@
+# AGDLP : le DL du partage porte les droits (quoi), les GG des services en sont membres (qui).
+# Comptes système par SID : leur nom change avec la langue de Windows.
+- name: Dossiers des partages
+  ansible.windows.win_file:
+    path: "{{ win_shares_root }}\\{{ item.nom }}"
+    state: directory
+  loop: "{{ partages }}"
+  loop_control:
+    label: "{{ item.nom }}"
+
+# SYSTEM et Administrateurs en contrôle total (par SID : leur nom change avec la langue)
+- name: Droits NTFS des comptes système
+  ansible.windows.win_acl:
+    path: "{{ win_shares_root }}\\{{ item.0.nom }}"
+    user: "{{ item.1 }}"
+    rights: FullControl
+    type: allow
+    inherit: ContainerInherit, ObjectInherit
+  loop: "{{ partages | product(['S-1-5-18', 'S-1-5-32-544']) | list }}"
+  loop_control:
+    label: "{{ item.0.nom }} : {{ item.1 }}"
+
+# Le DL du service en modification
+- name: Droits NTFS du DL du service
+  ansible.windows.win_acl:
+    path: "{{ win_shares_root }}\\{{ item.nom }}"
+    user: "{{ ad_netbios }}\\{{ item.acces }}"
+    rights: Modify
+    type: allow
+    inherit: ContainerInherit, ObjectInherit
+  loop: "{{ partages }}"
+  loop_control:
+    label: "{{ item.nom }} : {{ item.acces }}"
+
+# Sans héritage : sinon les Utilisateurs du serveur lisent tout, hérité de C:\
+- name: Couper l'héritage (seuls les droits ci-dessus restent)
+  ansible.windows.win_acl_inheritance:
+    path: "{{ win_shares_root }}\\{{ item.nom }}"
+    state: absent
+    reorganize: false
+  loop: "{{ partages }}"
+  loop_control:
+    label: "{{ item.nom }}"
+
+# Droits de partage larges, le filtrage se fait en NTFS
+- name: Partages
+  ansible.windows.win_share:
+    name: "{{ item.nom }}"
+    path: "{{ win_shares_root }}\\{{ item.nom }}"
+    full: "{{ ad_netbios }}\\Domain Admins"
+    change: "{{ ad_netbios }}\\{{ item.acces }}"
+    list: true
+  loop: "{{ partages }}"
+  loop_control:
+    label: "{{ item.nom }}"

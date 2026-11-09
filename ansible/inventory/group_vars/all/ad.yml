@@ -9,3 +9,11 @@ ad_ou_root: LogiNord
 ad_admin_user: Administrator
 ad_admin: "{{ ad_admin_user }}@{{ ad_domain }}"
 ad_admin_password: "{{ vault_win_password }}"
+
+# IP des DC, ceux du site de la machine d'abord : DNS et NTP des membres
+# (Debian et Windows)
+ad_member_dcs: >-
+  {{ (groups['domain_controllers'] | map('extract', hostvars) | selectattr('ad_site', 'eq', ad_site)
+      | map(attribute='baseline_win_lan.address') | list)
+   + (groups['domain_controllers'] | map('extract', hostvars) | rejectattr('ad_site', 'eq', ad_site)
+      | map(attribute='baseline_win_lan.address') | list) }}

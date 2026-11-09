@@ -30,6 +30,17 @@
     - ad_dc
 
 # Après les DC : le domaine doit exister pour le joindre
+- name: Windows membres du domaine
+  hosts: win_members
+  vars_files:
+    - vault/secrets.yml
+  roles:
+    - ad_win_member
+    # Le serveur de fichiers des services (MC08 : cibles des lecteurs réseau)
+    - role: win_shares
+      when: inventory_hostname == partages_serveur
+      tags: partages
+
 - name: Debian membres du domaine (realmd, SSSD, sudo)
   hosts: ad_members
   vars_files:

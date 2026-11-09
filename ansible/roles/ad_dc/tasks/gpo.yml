@@ -1,0 +1,103 @@
+# MC08. Pas de module Ansible pour les GPO : du PowerShell qui lit, compare, puis agit.
+# Sans ça, chaque passage réécrit la GPO et incrémente sa version : les machines la
+# réappliquent pour rien.
+
+# Une seule politique par domaine : liée à une OU, elle n'aurait aucun effet sur les comptes
+- name: Politique de mots de passe du domaine
+  ansible.windows.win_powershell:
+    parameters:
+      Domain: "{{ ad_domain }}"
+      Policy: "{{ ad_password_policy }}"
+    script: |
+      param($Domain, [hashtable]$Policy)
+      $Ansible.Changed = $false
+      $current = Get-ADDefaultDomainPasswordPolicy -Identity $Domain
+      $diff = @{}
+      foreach ($k in $Policy.Keys) {
+        if ("$($current.$k)" -ne "$($Policy[$k])") { $diff[$k] = $Policy[$k] }
+      }
+      if ($diff.Count) {
+        Set-ADDefaultDomainPasswordPolicy -Identity $Domain @diff
+        $Ansible.Changed = $true
+      }
+
+# OU cibles : l'OU `links` de chaque site (OU=Serveurs,OU=Lille,…)
+- name: GPO de registre (créer, régler, lier)
+  ansible.windows.win_powershell:
+    parameters:
+      Name: "{{ item.name }}"
+      Keys: "{{ item['keys'] }}"
+      Values: "{{ item['values'] }}"
+      Targets: "{{ ad_sites | map(attribute='name')
+                   | map('regex_replace', '^(.*)$', 'OU=' ~ item.links ~ ',OU=\\1,OU=' ~ ad_ou_root ~ ',' ~ ad_base)
+                   | list }}"
+    script: |
+      param($Name, [string[]]$Keys, [hashtable]$Values, [string[]]$Targets)
+      $Ansible.Changed = $false
+      if (-not (Get-GPO -Name $Name -ErrorAction SilentlyContinue)) {
+        New-GPO -Name $Name | Out-Null
+        $Ansible.Changed = $true
+      }
+      foreach ($key in $Keys) {
+        foreach ($value in $Values.Keys) {
+          $current = Get-GPRegistryValue -Name $Name -Key $key -ValueName $value -ErrorAction SilentlyContinue
+          if ($current.Value -ne $Values[$value]) {
+            Set-GPRegistryValue -Name $Name -Key $key -ValueName $value -Type DWord -Value $Values[$value] | Out-Null
+            $Ansible.Changed = $true
+          }
+        }
+      }
+      foreach ($target in $Targets) {
+        if (-not ((Get-GPInheritance -Target $target).GpoLinks | Where-Object DisplayName -eq $Name)) {
+          New-GPLink -Name $Name -Target $target | Out-Null
+          $Ansible.Changed = $true
+        }
+      }
+  loop: "{{ ad_gpo_registry }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# Sauvegardes produites par playbooks/gpo_lecteurs.yml, versionnées dans files/gpo/
+- name: Copier les sauvegardes de GPO sur le DC
+  ansible.windows.win_copy:
+    src: "{{ playbook_dir }}/files/gpo/{{ item.folder }}/"
+    dest: C:\GPOBackups\{{ item.folder }}\
+  loop: "{{ ad_gpo_imports }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: (playbook_dir ~ '/files/gpo/' ~ item.folder) is directory
+
+# Import-GPO réécrit la GPO à chaque appel : on n'importe que si la description ne porte pas
+# déjà l'identifiant de cette sauvegarde
+- name: Importer les GPO depuis leur sauvegarde, puis lier
+  ansible.windows.win_powershell:
+    parameters:
+      Name: "{{ item.name }}"
+      Path: C:\GPOBackups\{{ item.folder }}
+      # manifest.xml : le sommaire écrit par Backup-GPO, l'identifiant de la sauvegarde est dans <ID>
+      BackupId: >-
+        {{ lookup('ansible.builtin.file', playbook_dir ~ '/files/gpo/' ~ item.folder ~ '/manifest.xml')
+           | regex_findall('<ID><!\[CDATA\[(\{[0-9A-F-]+\})\]\]></ID>') | first }}
+      Targets: "{{ ad_sites | map(attribute='name')
+                   | map('regex_replace', '^(.*)$', 'OU=' ~ item.links ~ ',OU=\\1,OU=' ~ ad_ou_root ~ ',' ~ ad_base)
+                   | list }}"
+    script: |
+      param($Name, $Path, $BackupId, [string[]]$Targets)
+      $Ansible.Changed = $false
+      $tag = "Importée par Ansible depuis la sauvegarde $BackupId"
+      $gpo = Get-GPO -Name $Name -ErrorAction SilentlyContinue
+      if ($gpo.Description -ne $tag) {
+        Import-GPO -BackupId $BackupId.Trim('{}') -Path $Path -TargetName $Name -CreateIfNeeded | Out-Null
+        (Get-GPO -Name $Name).Description = $tag
+        $Ansible.Changed = $true
+      }
+      foreach ($target in $Targets) {
+        if (-not ((Get-GPInheritance -Target $target).GpoLinks | Where-Object DisplayName -eq $Name)) {
+          New-GPLink -Name $Name -Target $target | Out-Null
+          $Ansible.Changed = $true
+        }
+      }
+  loop: "{{ ad_gpo_imports }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: (playbook_dir ~ '/files/gpo/' ~ item.folder) is directory

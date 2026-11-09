@@ -84,3 +84,32 @@ ad_dns_records:
   - name: ldap01
     ip: 10.1.10.21
 ad_dns_forwarders: [1.1.1.1, 9.9.9.9]
+
+# MC08 : une seule politique de mots de passe par domaine, réglée sur le domaine lui-même
+ad_password_policy:
+  MinPasswordLength: 12
+  LockoutThreshold: 5
+  LockoutDuration: "00:15:00"
+  LockoutObservationWindow: "00:15:00"
+
+# GPO de registre (Set-GPRegistryValue). Le nom est la clé : SRV = ordinateurs serveurs,
+# USR = utilisateurs. Liées à l'OU `links` de chaque site. Chaque valeur (DWORD) est posée
+# dans chacune des clés.
+ad_gpo_registry:
+  - name: SRV - Pare-feu
+    links: Serveurs
+    keys:
+      - HKLM\SOFTWARE\Policies\Microsoft\WindowsFirewall\DomainProfile
+      - HKLM\SOFTWARE\Policies\Microsoft\WindowsFirewall\PrivateProfile
+      - HKLM\SOFTWARE\Policies\Microsoft\WindowsFirewall\PublicProfile
+    values:
+      EnableFirewall: 1
+      DefaultInboundAction: 1   # bloquer l'entrant, sauf règles explicites
+      DefaultOutboundAction: 0  # autoriser le sortant
+
+# GPO importées depuis une sauvegarde du dépôt (files/gpo/<dossier>), pour ce que
+# Set-GPRegistryValue ne sait pas faire : les préférences (lecteurs réseau)
+ad_gpo_imports:
+  - name: USR - Lecteurs réseau
+    folder: USR-Lecteurs-reseau
+    links: Utilisateurs

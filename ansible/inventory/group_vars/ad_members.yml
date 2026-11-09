@@ -1,10 +1,3 @@
-# IP des DC, ceux du site de la machine d'abord : DNS et NTP des membres
-ad_member_dcs: >-
-  {{ (groups['domain_controllers'] | map('extract', hostvars) | selectattr('ad_site', 'eq', ad_site)
-      | map(attribute='baseline_win_lan.address') | list)
-   + (groups['domain_controllers'] | map('extract', hostvars) | rejectattr('ad_site', 'eq', ad_site)
-      | map(attribute='baseline_win_lan.address') | list) }}
-
 # Kerberos refuse plus de 5 min d'écart : l'heure vient des DC, pas d'Internet
 baseline_ntp_servers: "{{ ad_member_dcs }}"
 # W32Time annonce une incertitude (root dispersion) de quelques secondes, même toutes les 64 s

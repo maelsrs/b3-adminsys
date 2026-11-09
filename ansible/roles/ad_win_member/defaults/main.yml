@@ -1,0 +1,2 @@
+# L'objet ordinateur atterrit dans l'OU Serveurs de son site : c'est là que les GPO SRV sont liées
+ad_win_member_ou: "OU=Serveurs,OU={{ ad_site }},OU={{ ad_ou_root }},{{ ad_base }}"

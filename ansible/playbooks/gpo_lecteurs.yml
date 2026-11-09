@@ -1,0 +1,80 @@
+# MC08 : fabrique la sauvegarde de la GPO « USR - Lecteurs réseau » dans files/gpo/.
+# À lancer une fois, puis à chaque changement de `partages` ; le rôle ad_dc l'importe ensuite.
+#
+# Les lecteurs réseau sont des préférences (GPP), pas des clés de registre : Set-GPRegistryValue
+# ne sait pas les écrire. Sans console graphique dans le lab (DC en Server Core), on écrit ce
+# que la console écrirait : Drives.xml dans SYSVOL, l'extension côté AD, la version. La GPO
+# modèle est supprimée après sa sauvegarde : celle qui s'applique vient de l'import.
+- name: Sauvegarde de la GPO de lecteurs réseau
+  hosts: "{{ groups['domain_controllers'] | first }}"
+  gather_facts: false
+  vars_files:
+    - ../vault/secrets.yml
+  vars:
+    gpo_folder: USR-Lecteurs-reseau
+    gpo_backup_root: C:\GPOBackups\export
+    gpo_local: "{{ playbook_dir }}/../files/gpo/{{ gpo_folder }}"
+  tasks:
+    - name: Écrire la GPO modèle, la sauvegarder, la supprimer
+      ansible.windows.win_powershell:
+        parameters:
+          Domain: "{{ ad_domain }}"
+          Netbios: "{{ ad_netbios }}"
+          Base: "{{ ad_base }}"
+          Server: "{{ partages_serveur }}"
+          Partages: "{{ partages }}"
+          Out: "{{ gpo_backup_root }}"
+        script: |
+          param($Domain, $Netbios, $Base, $Server, [object[]]$Partages, $Out)
+          $name = 'MODELE - Lecteurs réseau'
+          Get-GPO -Name $name -ErrorAction SilentlyContinue | Remove-GPO
+          $gpo = New-GPO -Name $name
+          $guid = "{$($gpo.Id.ToString().ToUpper())}"
+          $now = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+
+          # Un lecteur par partage, ciblé sur le GG du service (ciblage par SID, comme la console)
+          $drives = foreach ($p in $Partages) {
+            $sid = (Get-ADGroup $p.groupe).SID.Value
+            $uid = "{$([guid]::NewGuid().ToString().ToUpper())}"
+            "<Drive clsid=""{935D1B74-9CB8-4e3c-9914-7DD559B7A417}"" name=""$($p.lettre):"" status=""$($p.lettre):"" image=""2"" changed=""$now"" uid=""$uid"" bypassErrors=""1"">" +
+            "<Properties action=""U"" thisDrive=""NOCHANGE"" allDrives=""NOCHANGE"" userName="""" path=""\\$Server.$Domain\$($p.nom)"" label=""$($p.nom)"" persistent=""1"" useLetter=""1"" letter=""$($p.lettre)""/>" +
+            "<Filters><FilterGroup bool=""AND"" not=""0"" name=""$Netbios\$($p.groupe)"" sid=""$sid"" userContext=""1"" primaryGroup=""0"" localGroup=""0""/></Filters>" +
+            "</Drive>"
+          }
+          $xml = '<?xml version="1.0" encoding="utf-8"?>' + "`r`n" +
+                 '<Drives clsid="{8FDDCC1A-0C3C-43cd-A6B4-71A6DF20DA8C}">' + ($drives -join '') + '</Drives>'
+          $gpt = "C:\Windows\SYSVOL\domain\Policies\$guid"
+          New-Item "$gpt\User\Preferences\Drives" -ItemType Directory -Force | Out-Null
+          [IO.File]::WriteAllText("$gpt\User\Preferences\Drives\Drives.xml", $xml, [Text.UTF8Encoding]::new($true))
+
+          # Côté AD : l'extension « Drive Maps » (sinon les postes ignorent le fichier), et la
+          # version utilisateur (16 bits du haut) +1, recopiée dans GPT.INI
+          $dn = "CN=$guid,CN=Policies,CN=System,$Base"
+          $ext = '[{00000000-0000-0000-0000-000000000000}{2EA1A81B-48E5-45E9-8BB7-A6E3AC170006}]' +
+                 '[{5794DAFD-BE60-433F-88A2-1A31939AC01F}{2EA1A81B-48E5-45E9-8BB7-A6E3AC170006}]'
+          $version = (Get-ADObject $dn -Properties versionNumber).versionNumber + 65536
+          Set-ADObject $dn -Replace @{ gPCUserExtensionNames = $ext; versionNumber = $version }
+          Set-Content "$gpt\GPT.INI" "[General]`r`nVersion=$version" -Encoding Ascii
+
+          Remove-Item $Out -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item $Out -ItemType Directory | Out-Null
+          Backup-GPO -Guid $gpo.Id -Path $Out -Comment 'Lecteurs réseau des services (playbooks/gpo_lecteurs.yml)' | Out-Null
+          Remove-GPO -Guid $gpo.Id
+
+          # Chemins relatifs, en / (Windows les accepte). -Force : bkupInfo.xml et manifest.xml sont cachés
+          Get-ChildItem $Out -Recurse -File -Force | ForEach-Object { $_.FullName.Substring($Out.Length + 1).Replace('\', '/') }
+      register: gpo_backup
+
+    - name: Repartir d'un dossier vide dans le dépôt
+      ansible.builtin.file:
+        path: "{{ gpo_local }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+
+    - name: Rapatrier la sauvegarde dans le dépôt
+      ansible.builtin.fetch:
+        src: "{{ gpo_backup_root }}/{{ item }}"
+        dest: "{{ gpo_local }}/{{ item }}"
+        flat: true
+      loop: "{{ gpo_backup.output }}"

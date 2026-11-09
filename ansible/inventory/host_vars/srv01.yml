@@ -1,0 +1,11 @@
+# Serveur membre à Lille (MC08) : cible des GPO de l'OU Serveurs, partages des services.
+# ISO française et pas de sysprep sur le modèle : le compte local reste Administrateur (un
+# membre garde ses comptes locaux, pas besoin du renommage de win01).
+ansible_user: Administrateur
+
+# net1 Proxmox (vmbr1, VLAN 10) : LAN Lille. La carte de gestion reste en DHCP.
+baseline_win_lan:
+  mac: BC-24-11-54-FF-10
+  address: 10.1.10.30
+  prefix: 24
+  gateway: 10.1.10.1

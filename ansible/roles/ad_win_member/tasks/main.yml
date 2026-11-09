@@ -1,0 +1,26 @@
+# Un membre ne doit interroger que les DNS de l'AD (le DC du site d'abord), sur toutes ses
+# cartes : sinon il cherche loginord.internal sur Internet et ne trouve aucun DC
+- name: Serveurs DNS de l'AD
+  ansible.windows.win_powershell:
+    parameters:
+      Servers: "{{ ad_member_dcs }}"
+    script: |
+      param([string[]]$Servers)
+      $Ansible.Changed = $false
+      Get-NetAdapter | Where-Object Status -eq Up | ForEach-Object {
+        $current = (Get-DnsClientServerAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4).ServerAddresses
+        if ((@($current) -join ',') -ne ($Servers -join ',')) {
+          Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses $Servers
+          $Ansible.Changed = $true
+        }
+      }
+
+# Le compte local reste utilisable après la jonction : Ansible continue de s'y connecter
+- name: Joindre le domaine, dans l'OU Serveurs du site
+  microsoft.ad.membership:
+    dns_domain_name: "{{ ad_domain }}"
+    domain_admin_user: "{{ ad_admin }}"
+    domain_admin_password: "{{ ad_admin_password }}"
+    domain_ou_path: "{{ ad_win_member_ou }}"
+    state: domain
+    reboot: true

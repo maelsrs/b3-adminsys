@@ -1,0 +1,57 @@
+# Vérifications MC08, en lecture seule (hors gpupdate) : ansible-playbook playbooks/verif_gpo.yml
+- name: GPO, liens et politique de mots de passe, vus du DC racine
+  hosts: "{{ groups['domain_controllers'] | first }}"
+  gather_facts: false
+  vars_files:
+    - ../vault/secrets.yml
+  tasks:
+    - name: GPO, OU où elles sont liées, politique du domaine
+      ansible.windows.win_powershell:
+        parameters:
+          Base: "OU={{ ad_ou_root }},{{ ad_base }}"
+        script: |
+          param($Base)
+          $Ansible.Changed = $false
+          $p = Get-ADDefaultDomainPasswordPolicy
+          [pscustomobject]@{
+            gpo        = @(Get-GPO -All | Sort-Object DisplayName | ForEach-Object DisplayName)
+            liens      = @(Get-ADOrganizationalUnit -SearchBase $Base -Filter * | ForEach-Object {
+                           $l = (Get-GPInheritance -Target $_.DistinguishedName).GpoLinks.DisplayName
+                           if ($l) { "$($_.DistinguishedName.Replace(",$Base", '')) -> $($l -join ', ')" } })
+            mots_passe = "longueur $($p.MinPasswordLength), verrouillage après $($p.LockoutThreshold) échecs pendant $($p.LockoutDuration)"
+          }
+      register: verif_dc
+
+    - name: Résultat
+      ansible.builtin.debug:
+        var: verif_dc.output[0]
+
+- name: Ce qui s'applique vraiment sur les serveurs membres
+  hosts: win_members
+  gather_facts: false
+  vars_files:
+    - ../vault/secrets.yml
+  tasks:
+    - name: gpupdate, puis gpresult (ordinateur) et pare-feu effectif
+      ansible.windows.win_powershell:
+        script: |
+          $Ansible.Changed = $false
+          $oem = [Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage
+          [Console]::OutputEncoding = [Text.Encoding]::GetEncoding($oem)
+          gpupdate /target:computer /force | Out-Null
+          # Les noms de GPO de la section « appliquées » : sous le titre et son soulignement,
+          # jusqu'à la première ligne vide (ensuite viennent les GPO refusées)
+          $lines = gpresult /r /scope computer
+          $i = ($lines | Select-String 'Objets Strat.gie de groupe appliqu|Applied Group Policy Objects').LineNumber + 1
+          $applied = while ($lines[$i].Trim()) { $lines[$i].Trim(); $i++ }
+          [pscustomobject]@{
+            gpo_appliquees = @($applied)
+            pare_feu       = @(Get-NetFirewallProfile -PolicyStore ActiveStore |
+                               ForEach-Object { "$($_.Name) : actif=$($_.Enabled), entrant=$($_.DefaultInboundAction)" })
+            partages       = @(Get-SmbShare -Special $false | ForEach-Object Name)
+          }
+      register: verif_srv
+
+    - name: Résultat
+      ansible.builtin.debug:
+        var: verif_srv.output[0]

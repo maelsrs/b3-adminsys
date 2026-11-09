@@ -15,6 +15,11 @@
   ansible.builtin.import_tasks: annuaire.yml
   when: inventory_hostname == ad_forest_root
 
+- name: GPO et politique de mots de passe (racine), répliquées vers les autres DC
+  ansible.builtin.import_tasks: gpo.yml
+  when: inventory_hostname == ad_forest_root
+  tags: gpo
+
 - name: Promotion des autres DC dans leur site
   ansible.builtin.import_tasks: replica.yml
   when: inventory_hostname != ad_forest_root

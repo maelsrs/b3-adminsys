@@ -10,6 +10,7 @@ graph TD
   subgraph site_a["Site A — Lille (10.1.10.0/24)"]
     deb01["deb01 — membre AD\n10.1.10.20\nDebian"]
     ldap01["ldap01 — OpenLDAP prestataires\n10.1.10.21\nDebian"]
+    srv01["srv01 — membre AD, partages\n10.1.10.30\nWindows Server Core"]
     win02["win02 — DC racine\n10.1.10.10\nWindows Server"]
     rtr_a["rtr-a\neth1 10.1.10.1/24\neth2 192.0.2.1/24\nwg0 10.255.0.1/30"]
   end
@@ -25,6 +26,7 @@ graph TD
 
   deb01 -->|"10.1.0.0/16 via 10.1.10.1"| rtr_a
   ldap01 -->|"10.1.0.0/16 via 10.1.10.1"| rtr_a
+  srv01 -->|"GW 10.1.10.1"| rtr_a
   win02 -->|"GW 10.1.10.1"| rtr_a
   win01 -->|"GW 10.1.20.1"| rtr_b
 
@@ -98,6 +100,11 @@ ansible-playbook site.yml
 ansible-playbook site.yml   # le 2e passage doit afficher changed=0
 ```
 
+Pour ne rejouer qu'une partie : `-l <hôte>` et les tags (`--tags gpo`, `--tags partages`).
+Les facts sont mis en cache 1 h (`ansible.cfg`, dossier `.facts/`) : sur Windows, chaque
+collecte coûte 10 à 20 s par play. Après un changement de rôle d'une machine (promotion,
+jonction), forcer une nouvelle collecte avec `--flush-cache`.
+
 ## Routeurs (MC02)
 
 `rtr-a` et `rtr-b` (Alpine) : rôles `router` (IP, routage, nftables), `wireguard` (tunnel `wg0`)
@@ -129,14 +136,15 @@ Le rôle ne change pas.
 
 ## Rôles par hôte
 
-| Hôte | baseline | router | wireguard | frr | ssh_hardening | ad_dc | ad_member | openldap |
-|------|:--------:|:------:|:---------:|:---:|:-------------:|:-----:|:---------:|:--------:|
-| deb01 | ✅ | — | — | — | ✅ | — | ✅ | — |
-| ldap01 | ✅ | — | — | — | ✅ | — | — | ✅ |
-| win02 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ racine | — | — |
-| win01 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ réplica | — | — |
-| rtr-a | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| rtr-b | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Hôte | baseline | router | wireguard | frr | ssh_hardening | ad_dc | ad_member | ad_win_member | win_shares | openldap |
+|------|:--------:|:------:|:---------:|:---:|:-------------:|:-----:|:---------:|:-------------:|:----------:|:--------:|
+| deb01 | ✅ | — | — | — | ✅ | — | ✅ | — | — | — |
+| ldap01 | ✅ | — | — | — | ✅ | — | — | — | — | ✅ |
+| win02 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ racine + GPO | — | — | — | — |
+| win01 | ✅ | — | — | — | ✅ (OpenSSH) | ✅ réplica | — | — | — | — |
+| srv01 | ✅ | — | — | — | ✅ (OpenSSH) | — | — | ✅ | ✅ | — |
+| rtr-a | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — |
+| rtr-b | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — |
 
 > 🔲 = à créer · ✅ = en place
 
@@ -502,3 +510,79 @@ ldapsearch -x -H ldap://ldap01.loginord.internal -b ...      # Confidentiality r
 ldapwhoami -x -ZZ -H ldap://ldap01.loginord.internal -D uid=jdupont,ou=prestataires,dc=loginord,dc=internal -W
 sudo ldapsearch -Q -Y EXTERNAL -H ldapi:/// -b cn=config olcSecurity olcTLSCertificateFile
 ```
+
+## GPO en code (MC08)
+
+Rappel : une GPO s'applique dans l'ordre local, site, domaine, OU (la plus proche en dernier) ;
+la dernière appliquée gagne. Une GPO = un objet dans AD + des fichiers dans SYSVOL (répliqué par
+DFS-R, MC05).
+
+**srv01** : serveur membre Windows (VM 120, clone lié de `template-windows`), joint au domaine
+dans `OU=Serveurs,OU=Lille` (rôle `ad_win_member`) : c'est la cible des GPO `SRV`, et le serveur
+de fichiers des services (rôle `win_shares`). Le modèle n'est pas passé par sysprep : srv01 garde
+le SID machine de l'ancien win01, sans conséquence pour un membre du domaine. ISO française : il
+reste en `Administrateur` local (`host_vars/srv01.yml`), un membre garde ses comptes locaux.
+
+Tâches `roles/ad_dc/tasks/gpo.yml` sur la racine, variables dans
+`group_vars/domain_controllers.yml`. Pas de module Ansible : du PowerShell qui **lit, compare,
+puis agit**. Sinon chaque passage réécrit la GPO, incrémente sa version, et toutes les machines
+la réappliquent pour rien.
+
+1. **Mots de passe** (`ad_password_policy`) : longueur 12, verrouillage après 5 échecs pendant
+   15 min, réglés sur le domaine (`Set-ADDefaultDomainPasswordPolicy`). Une politique liée à une
+   OU n'aurait **aucun effet** sur les comptes du domaine : une seule politique par domaine (sauf
+   PSO). Le PDC recopie la valeur dans la `Default Domain Policy` (`GptTmpl.inf`) : les deux
+   restent d'accord, vérifié après un `gpupdate /force`.
+2. **`SRV - Pare-feu`** (`ad_gpo_registry`) : `New-GPO`, `Set-GPRegistryValue` (pare-feu actif,
+   entrant bloqué, sortant autorisé, sur les trois profils), `New-GPLink` vers `OU=Serveurs` de
+   chaque site. Les règles locales restent fusionnées : SMB, WinRM et SSH passent toujours.
+3. **`USR - Lecteurs réseau`** (`ad_gpo_imports`) : un lecteur par service (`partages`, dans
+   `group_vars/all/partages.yml`), ciblé sur le GG du service, vers `\\srv01.loginord.internal\<service>`.
+   Les lecteurs sont des **préférences (GPP)**, pas des clés de registre : `Set-GPRegistryValue`
+   ne sait pas les écrire. Le TP prévoit de les créer dans la console, de sauvegarder, puis
+   d'importer par Ansible ; ici les DC sont en Server Core (pas de console graphique), donc
+   `playbooks/gpo_lecteurs.yml` écrit ce que la console écrirait (`Drives.xml` dans SYSVOL,
+   l'extension « Drive Maps » sur l'objet AD, la version), sauvegarde (`Backup-GPO`), rapatrie la
+   sauvegarde dans `files/gpo/USR-Lecteurs-reseau/` et supprime la GPO modèle. Le rôle `ad_dc`
+   importe ensuite (`Import-GPO`) : la GPO qui s'applique vient de la sauvegarde du dépôt.
+   Idempotence : la description de la GPO porte l'identifiant de la sauvegarde importée.
+4. **Partages** (`win_shares`, srv01) : AGDLP. Le GG du service décide qui reçoit le lecteur
+   (qui), le DL porte les droits NTFS (quoi) ; héritage coupé, sinon les Utilisateurs du serveur
+   lisent tout (hérité de `C:\`).
+
+| Lecteur | Partage | Ciblé sur | Droits NTFS |
+|---|---|---|---|
+| S: | Compta | GG_Compta | DL_Partage_Compta_RW |
+| T: | Direction | GG_Direction | DL_Partage_Direction_RW |
+| U: | Adminsys | GG_Adminsys | DL_Partage_Adminsys_RW |
+
+**Points à expliquer à l'oral** :
+
+- **Le conteneur `Computers` n'est pas une OU** : impossible d'y lier une GPO. Une machine jointe
+  sans OU précise y atterrit et ne reçoit aucune GPO `SRV`. D'où `domain_ou_path` à la jonction
+  (`--computer-ou` côté Debian).
+- **Ciblage par SID** : la GPO de lecteurs vise les groupes par leur SID. Domaine reconstruit =
+  nouveaux SID : il faut relancer `playbooks/gpo_lecteurs.yml` (ou une table de migration à
+  l'import), sinon personne ne reçoit plus ses lecteurs.
+- **Côté Linux** : SSSD lit les GPO de droits de connexion (`ad_gpo_access_control`, en
+  `permissive` depuis le MC06) : une GPO pensée pour Windows peut bloquer les Debian.
+
+```sh
+ansible-playbook playbooks/gpo_lecteurs.yml        # (re)fabrique la sauvegarde, à committer
+ansible-playbook site.yml -l win02 --tags gpo      # politique, GPO, imports, liens (~30 s)
+ansible-playbook site.yml -l win02 --tags gpo      # changed=0
+ansible-playbook site.yml -l srv01                 # jonction, partages
+ansible-playbook playbooks/verif_gpo.yml           # GPO et liens, gpresult sur srv01
+```
+
+Sur srv01 :
+
+```powershell
+gpupdate /force
+gpresult /r /scope computer      # « SRV - Pare-feu » et « Default Domain Policy » appliquées
+gpresult /h C:\rapport.html      # le rapport complet
+Get-NetFirewallProfile -PolicyStore ActiveStore   # entrant : Block, imposé par la GPO
+```
+
+Côté DC : `Get-GPInheritance -Target "OU=Serveurs,OU=Lille,OU=LogiNord,DC=loginord,DC=internal"`,
+et le journal `Microsoft-Windows-GroupPolicy/Operational` pour les erreurs.
