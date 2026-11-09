@@ -664,3 +664,33 @@ sudo mdadm /dev/md0 --add $D
 watch cat /proc/mdstat                   # reconstruction, puis [UU]
 sudo xfs_quota -x -c 'report -p -h' /srv/depot
 ```
+
+## Stockage Windows : Storage Spaces, partages, FSRM (MC10)
+
+srv01 joue le FS01 du TP (rôle `win_shares`, partages dans `group_vars/all/partages.yml`).
+
+- **Storage Spaces** : 2 disques SATA de 8 Go → pool `Data` → disque virtuel `vData` en miroir
+  → volume `D:` (NTFS). Le modèle Windows n'a pas le pilote virtio-scsi : disques en SATA. Le
+  lecteur CD est poussé de `D:` vers `Z:`.
+- **Partages** : `\\srv01\Partages` (racine) et un partage par service, droits de partage
+  larges, NTFS précis (la plus restrictive gagne), **ABE** : chacun ne voit que les dossiers
+  qu'il peut ouvrir.
+- **AGDLP** : les ACL ne citent que les DL (`DL_Partage_<service>_RW`), héritage coupé.
+- **RH confidentiel** : SYSTEM et `DL_Partage_RH_RW` seulement, **pas les admins IT** (demande du
+  client). Les Administrateurs restent propriétaires : ils peuvent reprendre la main, mais par
+  un geste volontaire, pas par défaut. D'où les ACL et partages en PowerShell (le propriétaire
+  peut réécrire les droits sans ouvrir le dossier) et le partage créé en SYSTEM.
+- **FSRM** : quota strict de 5 Go par service (`quota`).
+- La GPO de lecteurs (MC08) donne `R:` aux RH.
+
+| Test (alice.martin, compta) | Résultat |
+|---|---|
+| `\\srv01\Partages` | ne voit que `Compta` (ABE) |
+| `\\srv01\RH` | Accès refusé |
+| 4 Go dans Compta | accepté |
+| 5,1 Go dans Compta (5,45 Go libres sur D:) | refusé : quota de 5 Go |
+| `Get-VirtualDisk` | `vData Mirror Healthy`, 2 copies |
+
+```sh
+ansible-playbook site.yml -l srv01 --tags partages   # changed=0 au 2e passage
+```

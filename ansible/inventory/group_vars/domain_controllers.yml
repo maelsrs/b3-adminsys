@@ -37,6 +37,8 @@ ad_groups:
     scope: global
   - name: GG_Adminsys
     scope: global
+  - name: GG_RH
+    scope: global
   # MC06 : connexion aux Debian (+ sudo pour les admins)
   - name: GG_Admins_Linux
     scope: global
@@ -54,6 +56,9 @@ ad_groups:
   - name: DL_Partage_Compta_RW
     scope: domainlocal
     members: [GG_Compta]
+  - name: DL_Partage_RH_RW
+    scope: domainlocal
+    members: [GG_RH]
 
 ad_users:
   - name: test2.test2

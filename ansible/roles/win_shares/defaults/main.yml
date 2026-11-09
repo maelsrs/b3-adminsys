@@ -1,2 +1,4 @@
-win_shares_root: C:\Partages
+win_shares_pool: Data
+win_shares_drive: D
+win_shares_root: D:\Partages
 partages: []

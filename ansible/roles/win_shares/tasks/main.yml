@@ -1,5 +1,55 @@
-# AGDLP : le DL du partage porte les droits (quoi), les GG des services en sont membres (qui).
-# Comptes système par SID : leur nom change avec la langue de Windows.
+# Storage Spaces = RAID + LVM côté Windows : disques → pool → disque virtuel en miroir → volume.
+# Le lecteur CD (virtio-win) occupe souvent D: : on le pousse en Z: d'abord.
+- name: Pool en miroir et volume D
+  ansible.windows.win_powershell:
+    parameters:
+      Pool: "{{ win_shares_pool }}"
+      Drive: "{{ win_shares_drive }}"
+    script: |
+      param($Pool, $Drive)
+      $Ansible.Changed = $false
+      $cd = Get-CimInstance Win32_Volume -Filter "DriveType=5 AND DriveLetter='${Drive}:'"
+      if ($cd) { $cd | Set-CimInstance -Property @{ DriveLetter = 'Z:' }; $Ansible.Changed = $true }
+      if (-not (Get-StoragePool -FriendlyName $Pool -ErrorAction SilentlyContinue)) {
+        $disks = @(Get-PhysicalDisk -CanPool $true)
+        if ($disks.Count -lt 2) { throw "Miroir impossible : $($disks.Count) disque(s) disponible(s), il en faut 2" }
+        New-StoragePool -FriendlyName $Pool -StorageSubSystemFriendlyName 'Windows Storage*' -PhysicalDisks $disks | Out-Null
+        $Ansible.Changed = $true
+      }
+      if (-not (Get-VirtualDisk -FriendlyName "v$Pool" -ErrorAction SilentlyContinue)) {
+        New-VirtualDisk -StoragePoolFriendlyName $Pool -FriendlyName "v$Pool" -ResiliencySettingName Mirror -UseMaximumSize | Out-Null
+        $Ansible.Changed = $true
+      }
+      if (-not (Get-Volume -DriveLetter $Drive -ErrorAction SilentlyContinue)) {
+        Get-VirtualDisk -FriendlyName "v$Pool" | Get-Disk | Where-Object PartitionStyle -eq RAW |
+          Initialize-Disk -PartitionStyle GPT -PassThru |
+          New-Partition -DriveLetter $Drive -UseMaximumSize |
+          Format-Volume -FileSystem NTFS -NewFileSystemLabel Partages -Confirm:$false | Out-Null
+        $Ansible.Changed = $true
+      }
+
+# Dossier racine, partagé avec l'énumération basée sur l'accès (ABE) : chacun n'y voit que les
+# dossiers qu'il peut ouvrir. Utilisateurs authentifiés : lister ce dossier seulement.
+- name: Dossier racine des partages
+  ansible.windows.win_file:
+    path: "{{ win_shares_root }}"
+    state: directory
+
+- name: Droits NTFS de la racine
+  ansible.windows.win_acl:
+    path: "{{ win_shares_root }}"
+    user: "{{ item.user }}"
+    rights: "{{ item.rights }}"
+    type: allow
+    inherit: "{{ item.inherit }}"
+    propagation: None
+  loop:
+    - {user: S-1-5-18, rights: FullControl, inherit: "ContainerInherit, ObjectInherit"}
+    - {user: S-1-5-32-544, rights: FullControl, inherit: None}
+    - {user: S-1-5-11, rights: ReadAndExecute, inherit: None}
+  loop_control:
+    label: "{{ item.user }}"
+
 - name: Dossiers des partages
   ansible.windows.win_file:
     path: "{{ win_shares_root }}\\{{ item.nom }}"
@@ -8,48 +58,107 @@
   loop_control:
     label: "{{ item.nom }}"
 
-# SYSTEM et Administrateurs en contrôle total (par SID : leur nom change avec la langue)
-- name: Droits NTFS des comptes système
-  ansible.windows.win_acl:
-    path: "{{ win_shares_root }}\\{{ item.0.nom }}"
-    user: "{{ item.1 }}"
-    rights: FullControl
-    type: allow
-    inherit: ContainerInherit, ObjectInherit
-  loop: "{{ partages | product(['S-1-5-18', 'S-1-5-32-544']) | list }}"
-  loop_control:
-    label: "{{ item.0.nom }} : {{ item.1 }}"
-
-# Le DL du service en modification
-- name: Droits NTFS du DL du service
-  ansible.windows.win_acl:
-    path: "{{ win_shares_root }}\\{{ item.nom }}"
-    user: "{{ ad_netbios }}\\{{ item.acces }}"
-    rights: Modify
-    type: allow
-    inherit: ContainerInherit, ObjectInherit
+# AGDLP : les ACL ne citent que le DL du service, plus SYSTEM, plus les Administrateurs sauf là
+# où le client l'interdit (RH). Héritage coupé, sinon le parent donne des droits à tout le monde.
+# En PowerShell plutôt que win_acl : une fois RH verrouillé, les admins ne peuvent plus l'ouvrir ;
+# ils en restent propriétaires, ce qui suffit pour lire et réécrire les droits (pas le contenu).
+- name: Droits NTFS des dossiers des services (AGDLP, héritage coupé)
+  ansible.windows.win_powershell:
+    parameters:
+      Path: "{{ win_shares_root }}\\{{ item.nom }}"
+      Group: "{{ ad_netbios }}\\{{ item.acces }}"
+      Admins: "{{ item.admins | default(true) }}"
+    script: |
+      param($Path, $Group, [bool]$Admins)
+      $Ansible.Changed = $false
+      $sid = { param($n) ([Security.Principal.NTAccount]$n).Translate([Security.Principal.SecurityIdentifier]).Value }
+      $want = @{ 'S-1-5-18' = 'FullControl'; (& $sid $Group) = 'Modify, Synchronize' }
+      if ($Admins) { $want['S-1-5-32-544'] = 'FullControl' }
+      $acl = Get-Acl $Path
+      $have = @{}
+      foreach ($r in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+        $have[$r.IdentityReference.Value] = "$($r.FileSystemRights)"
+      }
+      $same = $acl.AreAccessRulesProtected -and $have.Count -eq $want.Count -and
+              -not ($want.Keys | Where-Object { $have[$_] -ne $want[$_] })
+      if (-not $same) {
+        $new = New-Object Security.AccessControl.DirectorySecurity
+        $new.SetAccessRuleProtection($true, $false)
+        foreach ($k in $want.Keys) {
+          $new.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
+            (New-Object Security.Principal.SecurityIdentifier $k), $want[$k],
+            'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+        }
+        (Get-Item $Path).SetAccessControl($new)
+        $Ansible.Changed = $true
+      }
   loop: "{{ partages }}"
   loop_control:
-    label: "{{ item.nom }} : {{ item.acces }}"
+    label: "{{ item.nom }}{{ '' if item.admins | default(true) else ' (sans les admins)' }}"
 
-# Sans héritage : sinon les Utilisateurs du serveur lisent tout, hérité de C:\
-- name: Couper l'héritage (seuls les droits ci-dessus restent)
-  ansible.windows.win_acl_inheritance:
-    path: "{{ win_shares_root }}\\{{ item.nom }}"
+# Droits de partage larges, le filtrage se fait en NTFS (la plus restrictive gagne).
+# FolderEnumerationMode AccessBased : énumération basée sur l'accès (ABE)
+- name: Partages (racine et services, ABE)
+  ansible.windows.win_powershell:
+    parameters:
+      Root: "{{ win_shares_root }}"
+      Folder: "{{ item.nom }}"
+      Netbios: "{{ ad_netbios }}"
+      Group: "{{ item.acces }}"
+    script: |
+      param($Root, $Folder, $Netbios, $Group)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $name = if ($Folder) { $Folder } else { 'Partages' }
+      $path = if ($Folder) { Join-Path $Root $Folder } else { $Root }
+      $share = Get-SmbShare -Name $name -ErrorAction SilentlyContinue
+      if ($share -and $share.Path -ne $path) { Remove-SmbShare -Name $name -Force; $share = $null }
+      if (-not $share) {
+        New-SmbShare -Name $name -Path $path -FullAccess "$Netbios\Domain Admins" -ChangeAccess "$Netbios\$Group" `
+          -FolderEnumerationMode AccessBased | Out-Null
+        $Ansible.Changed = $true
+      } elseif ($share.FolderEnumerationMode -ne 'AccessBased') {
+        Set-SmbShare -Name $name -FolderEnumerationMode AccessBased -Force
+        $Ansible.Changed = $true
+      }
+  # SYSTEM : New-SmbShare doit ouvrir le dossier, et les admins ne le peuvent plus sur RH
+  become: true
+  become_method: runas
+  become_user: SYSTEM
+  # La racine (nom vide) : tous les utilisateurs du domaine, l'ABE trie ce que chacun voit
+  loop: "{{ [{'nom': '', 'acces': 'Domain Users'}] + partages }}"
+  loop_control:
+    label: "{{ item.nom or 'Partages (racine)' }}"
+
+# Quotas FSRM stricts : l'écriture est refusée au-delà (lire, comparer, agir)
+- name: FSRM (gestionnaire de ressources du serveur de fichiers)
+  ansible.windows.win_feature:
+    name: FS-Resource-Manager
+    include_management_tools: true
+
+- name: Quotas stricts par service
+  ansible.windows.win_powershell:
+    parameters:
+      Path: "{{ win_shares_root }}\\{{ item.nom }}"
+      Size: "{{ item.quota }}"
+    script: |
+      param($Path, $Size)
+      $Ansible.Changed = $false
+      $bytes = [int64](Invoke-Expression $Size)
+      $q = Get-FsrmQuota -Path $Path -ErrorAction SilentlyContinue
+      if (-not $q) {
+        New-FsrmQuota -Path $Path -Size $bytes | Out-Null
+        $Ansible.Changed = $true
+      } elseif ($q.Size -ne $bytes -or $q.SoftLimit) {
+        Set-FsrmQuota -Path $Path -Size $bytes -SoftLimit:$false | Out-Null
+        $Ansible.Changed = $true
+      }
+  loop: "{{ partages | selectattr('quota', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.nom }} ({{ item.quota }})"
+
+# MC08 : les partages vivaient sur C:\Partages, avant le pool
+- name: Ancien emplacement des partages
+  ansible.windows.win_file:
+    path: C:\Partages
     state: absent
-    reorganize: false
-  loop: "{{ partages }}"
-  loop_control:
-    label: "{{ item.nom }}"
-
-# Droits de partage larges, le filtrage se fait en NTFS
-- name: Partages
-  ansible.windows.win_share:
-    name: "{{ item.nom }}"
-    path: "{{ win_shares_root }}\\{{ item.nom }}"
-    full: "{{ ad_netbios }}\\Domain Admins"
-    change: "{{ ad_netbios }}\\{{ item.acces }}"
-    list: true
-  loop: "{{ partages }}"
-  loop_control:
-    label: "{{ item.nom }}"

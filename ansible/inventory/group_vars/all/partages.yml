@@ -1,16 +1,27 @@
-# Partages des services : servis par srv01 (win_shares), montés en lecteur réseau par la
-# GPO « USR - Lecteurs réseau » (MC08). Qui monte = le GG (qui), droits NTFS = le DL (quoi).
+# Partages des services : servis par srv01 sur D:\Partages (pool en miroir, MC10), montés en
+# lecteur réseau par la GPO « USR - Lecteurs réseau » (MC08). Qui monte = le GG (qui),
+# droits NTFS = le DL (quoi). quota : FSRM, strict (5 Go par service, demande du client).
 partages_serveur: srv01
 partages:
   - nom: Compta
     lettre: S
     groupe: GG_Compta
     acces: DL_Partage_Compta_RW
+    quota: 5GB
   - nom: Direction
     lettre: T
     groupe: GG_Direction
     acces: DL_Partage_Direction_RW
+    quota: 5GB
   - nom: Adminsys
     lettre: U
     groupe: GG_Adminsys
     acces: DL_Partage_Adminsys_RW
+    quota: 5GB
+  # Confidentiel : les admins IT n'y ont pas accès par défaut (demande du client)
+  - nom: RH
+    lettre: R
+    groupe: GG_RH
+    acces: DL_Partage_RH_RW
+    quota: 5GB
+    admins: false
