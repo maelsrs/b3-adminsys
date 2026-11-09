@@ -4,8 +4,9 @@
   listen: Recharger sshd
   changed_when: false
 
+# Debian : ssh ; Alpine (routeurs) : sshd
 - name: Recharger sshd
   ansible.builtin.service:
-    name: ssh
+    name: "{{ 'sshd' if ansible_facts.os_family == 'Alpine' else 'ssh' }}"
     state: reloaded
   listen: Recharger sshd
