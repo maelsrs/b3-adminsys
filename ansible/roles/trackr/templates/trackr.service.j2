@@ -1,6 +1,6 @@
 # Géré par Ansible (rôle trackr)
 [Unit]
-Description=TrackR - suivi des livraisons
+Description=TrackR - suivi des expéditions
 After=network-online.target postgresql.service
 Wants=network-online.target
 # Pas plus de 5 redémarrages en 2 min : au-delà, systemd abandonne (systemctl reset-failed)

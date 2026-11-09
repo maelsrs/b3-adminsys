@@ -45,6 +45,9 @@ ad_groups:
     scope: global
   - name: GG_Developpeurs
     scope: global
+  # MC11 : les gens des quais, seuls à entrer dans TrackR (TRACKR_AD_GROUP)
+  - name: GG_Exploitation
+    scope: global
   # MC08 : les comptes d'administration adm-xxx, soumis à la PSO
   - name: GG_Admins_Domaine
     scope: global
@@ -82,6 +85,11 @@ ad_users:
     surname: Leroy
     site: Dunkerque
     groups: [GG_Developpeurs]
+  - name: paul.durand
+    firstname: Paul
+    surname: Durand
+    site: Dunkerque
+    groups: [GG_Exploitation]
   # Compte d'administration séparé du compte de tous les jours (test2.test2), dans OU=Admins
   - name: adm-test2
     firstname: Test2

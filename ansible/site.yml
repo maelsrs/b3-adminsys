@@ -74,6 +74,8 @@
 
 - name: TrackR en service systemd, sauvegarde horaire de sa base
   hosts: db_servers
+  vars_files:
+    - vault/secrets.yml
   roles:
     - role: trackr
       tags: trackr

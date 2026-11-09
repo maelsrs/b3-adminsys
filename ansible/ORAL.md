@@ -18,13 +18,13 @@ seulement si le jury creuse (voir le README, sections « Points à expliquer à 
 | Le client a dit | Ce qu'on a fait | La preuve |
 |---|---|---|
 | « La liaison avec Dunkerque coupe tous les mois » | Un contrôleur de domaine **dans chaque site** (win02 Lille, win01 Dunkerque), DNS et DHCP locaux ; TrackR et sa base **à Dunkerque** | Démo couper le lien (§4) ; `nltest /dsgetsite` |
-| « TrackR ne doit jamais bloquer les camions » | TrackR = service systemd qui **redémarre seul** ; base sur **RAID 1** | `kill -9` → relancé en 5 s (`verif_trackr.yml`) ; RAID dégradé, la base reste lisible |
+| « TrackR ne doit jamais bloquer les camions » | TrackR = service systemd qui **redémarre seul** ; base sur **RAID 1** ; connexion par le DC **de Dunkerque** d'abord | `kill -9` → relancé en 5 s (`verif_trackr.yml`) ; RAID dégradé, la base reste lisible |
 | « Ne plus jamais ressaisir des jours de travail » | Sauvegarde **toutes les heures** (perte max : 1 h), **testée** par restauration | `pg_restore` dans `trackr_test`, même nombre de lignes |
 | « Le serveur compta est tombé l'hiver dernier » | Partages sur deux disques en miroir (Storage Spaces) ; clichés VSS à 7 h et 12 h | `Get-VirtualDisk` : Mirror Healthy ; fichier supprimé puis restauré |
 | « Le chef parti se connectait encore » | **Un seul annuaire** (AD) pour Windows et Linux : un compte désactivé l'est partout. Réplication **immédiate** entre sites (notification) | Désactiver un compte à Lille : refusé à Dunkerque quelques secondes après (à répéter avant l’oral) |
 | « Les salaires ont fuité » | Partage RH : **seul le groupe RH**, même pas les admins IT ; les autres **ne voient même pas** le dossier (ABE) | alice (compta) ne voit que `Compta`, `\\srv01\RH` : accès refusé |
 | « Les serveurs se remplissent de n'importe quoi » | **Quotas stricts** : 5 Go par service (Windows), 200 Mo pour le dépôt des devs (Linux) | Copie de 5,1 Go refusée ; `dd` coupé à 200 Mo |
-| « Un seul identifiant par personne » | Comptes AD pour tout le monde, y compris pour se connecter aux Debian (Kerberos/SSSD) | test2 entre en SSH sur deb01 avec son compte Windows |
+| « Un seul identifiant par personne » | Comptes AD pour tout le monde, y compris pour se connecter aux Debian (Kerberos/SSSD) | test2 entre en SSH sur deb01 avec son compte Windows ; paul (quais) entre dans TrackR, alice (compta) refusée |
 | « Le presta ne voit pas tout » | Prestataires dans un **annuaire séparé** (OpenLDAP), jamais dans l'AD | `ldapsearch` : jdupont n'existe que dans ldap01 |
 | « Intervenir de chez soi la nuit sans ouvrir la porte aux pirates » | **VPN** obligatoire ; SSH par clé uniquement, root refusé, groupes autorisés seulement | `ssh root@…` refusé, `ssh` sans clé refusé |
 | « Savoir qui fait quoi » | Comptes **nominatifs**, compte admin séparé (`adm-test2`) avec mot de passe renforcé (16 car., PSO) ; historique Git de chaque changement | `git log` ; `Get-ADUserResultantPasswordPolicy adm-test2` |
@@ -110,4 +110,4 @@ Avant l'oral : VPN connecté, toutes les VM allumées, puis
 - Sauvegardes de TrackR sur la même machine : la copie vers Lille est le bonus MC11, pas fait.
 - Certificat OpenLDAP auto-signé, et lecture anonyme de l'annuaire prestataires (hors mots de passe).
 - rtr-a / rtr-b : l'accès SSH d'Ansible est à réparer à la console (`adduser ansible ssh-admins`).
-- TrackR est une maquette : le vrai programme remplacera `/opt/trackr/trackr`, l'unité ne change pas.
+- Certificats LDAPS des DC auto-signés (pas d'AD CS) : à renouveler dans 5 ans, ou une PKI.

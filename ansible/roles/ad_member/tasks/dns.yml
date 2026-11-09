@@ -1,0 +1,19 @@
+---
+# Le DNS de l'AD (ad_member_dcs, DC du site d'abord). Repris par le rôle trackr (db01)
+- name: Empêcher dhclient de réécrire resolv.conf
+  ansible.builtin.copy:
+    content: |
+      # Géré par Ansible : resolv.conf pointe vers les DC, la carte de gestion n'y touche plus
+      make_resolv_conf() { :; }
+    dest: /etc/dhcp/dhclient-enter-hooks.d/ad-dns
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: DNS de l'AD
+  ansible.builtin.template:
+    src: resolv.conf.j2
+    dest: /etc/resolv.conf
+    owner: root
+    group: root
+    mode: "0644"

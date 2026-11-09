@@ -1,23 +1,8 @@
 ---
 # Prérequis : l'heure (chrony sur les DC, rôle baseline) et le DNS. Sans le DNS de l'AD, ni
 # realm discover ni Kerberos ne trouvent les DC (enregistrements SRV).
-- name: Empêcher dhclient de réécrire resolv.conf
-  ansible.builtin.copy:
-    content: |
-      # Géré par Ansible : resolv.conf pointe vers les DC, la carte de gestion n'y touche plus
-      make_resolv_conf() { :; }
-    dest: /etc/dhcp/dhclient-enter-hooks.d/ad-dns
-    owner: root
-    group: root
-    mode: "0644"
-
 - name: DNS de l'AD
-  ansible.builtin.template:
-    src: resolv.conf.j2
-    dest: /etc/resolv.conf
-    owner: root
-    group: root
-    mode: "0644"
+  ansible.builtin.import_tasks: dns.yml
 
 # bind9-dnsutils : nsupdate (SSSD inscrit la machine dans le DNS) et dig pour diagnostiquer
 - name: Paquets realmd, SSSD, Kerberos

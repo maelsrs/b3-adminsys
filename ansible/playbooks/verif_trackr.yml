@@ -1,20 +1,35 @@
 ---
 # Vérifications MC11 : ansible-playbook playbooks/verif_trackr.yml
-# kill -9 → TrackR revient seul ; une sauvegarde se restaure sur une base de test.
+# Connexion AD (membre de GG_Exploitation oui, les autres non), kill -9 → TrackR revient seul,
+# une sauvegarde se restaure sur une base de test.
 - name: TrackR survit à un kill -9, sa sauvegarde se restaure
   hosts: db_servers
   gather_facts: false
   become: true
+  vars_files:
+    - ../vault/secrets.yml
   vars:
     url: http://127.0.0.1:{{ trackr_port | default(8080) }}
   tasks:
-    - name: Une livraison, pour avoir quelque chose à restaurer
+    - name: Santé (base joignable, mode de connexion)
       ansible.builtin.uri:
-        url: "{{ url }}/livraisons"
+        url: "{{ url }}/health"
+      register: sante_avant
+
+    # Connexion réussie : redirection vers / avec un cookie de session. Refusée : 401
+    - name: Connexion AD de paul.durand (GG_Exploitation) et d'alice.martin (compta)
+      ansible.builtin.uri:
+        url: "{{ url }}/login"
         method: POST
-        body_format: json
-        body: {camion: "CAM-{{ 999 | random }}", destination: Dunkerque}
-        status_code: 201
+        body_format: form-urlencoded
+        body:
+          user: "{{ item }}"
+          password: "{{ vault_pwd_init }}"
+        follow_redirects: none
+        status_code: [303, 302, 401]
+      loop: [paul.durand, alice.martin]
+      register: connexions
+      no_log: true
 
     - name: PID avant
       ansible.builtin.systemd_service:
@@ -52,8 +67,8 @@
         createdb trackr_test
         pg_restore --no-owner -d trackr_test "$f"
         echo "$f"
-        psql -Atc 'SELECT count(*) FROM livraisons' trackr
-        psql -Atc 'SELECT count(*) FROM livraisons' trackr_test
+        psql -Atc 'SELECT count(*) FROM expeditions' trackr
+        psql -Atc 'SELECT count(*) FROM expeditions' trackr_test
       args:
         executable: /bin/bash
       become: true
@@ -74,10 +89,15 @@
     - name: Résultat
       ansible.builtin.assert:
         that:
+          - sante_avant.json.auth == 'ad'
+          - connexions.results[0].status in [302, 303]
+          - connexions.results[1].status == 401
           - apres.status.MainPID != avant.status.MainPID
           - restau.stdout_lines[1] == restau.stdout_lines[2]
         success_msg: >-
+          connexion AD : paul.durand {{ connexions.results[0].status }},
+          alice.martin {{ connexions.results[1].status }} ;
           kill -9 : PID {{ avant.status.MainPID }} → {{ apres.status.MainPID }} ;
           restauré {{ restau.stdout_lines[0] | basename }} :
-          {{ restau.stdout_lines[2] }} livraison(s) sur {{ restau.stdout_lines[1] }} ;
+          {{ restau.stdout_lines[2] }} expédition(s) sur {{ restau.stdout_lines[1] }} ;
           {{ infos.stdout_lines | join(' | ') }}

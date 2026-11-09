@@ -706,14 +706,28 @@ vssadmin list shadows /for=D:                        # sur srv01 : les clichés
 
 ## Services et planification (MC11)
 
-Rôle `trackr` sur `db_servers` (db01). Le vrai TrackR arrivera plus tard : en attendant, une
-**maquette** Python (`roles/trackr/files/trackr`, HTTP sur :8080, table `livraisons`). L'unité,
-la sauvegarde et les tests restent valables quand on remplacera le programme.
+Rôle `trackr` sur `db_servers` (db01). `roles/trackr/files/trackr` est le `trackr.py` du
+prestataire, **inchangé** (dépôt de cours, dossier `TrackR/`) : suivi des expéditions en HTTP
+(:8080), sans dépendance pip. Tout le reste (compte, configuration, unité, sauvegarde) est
+autour, dans le rôle : une nouvelle version = remplacer ce fichier.
 
 - **TrackR tourne à côté de sa base**, à Dunkerque : lien coupé, les camions continuent.
   DNS : `trackr` est un **CNAME** vers `db01` (un alias se déplace sans toucher aux clients).
 - **Compte dédié** `trackr` (système, sans shell) = rôle PostgreSQL `trackr` en authentification
-  *peer* par socket Unix : **aucun mot de passe** stocké.
+  *peer* par socket Unix (`TRACKR_DB=postgresql:///trackr`) : **aucun mot de passe de base**.
+  TrackR crée sa table `expeditions` au premier démarrage.
+- **Connexion avec le compte Windows** (`TRACKR_AUTH=ad`) : seuls les membres de
+  **`GG_Exploitation`** entrent (groupes imbriqués compris) ; compte de test `paul.durand`
+  (Dunkerque). Un compte désactivé dans AD ne rentre plus, sans rien toucher d'autre.
+  - **LDAPS** (636) : les DC refusent la connexion LDAP par mot de passe sans chiffrement.
+    `ad_dc` (`--tags ldaps`) donne à chaque DC un certificat auto-signé à son nom (et à celui du
+    domaine), rechargé sans redémarrer AD DS (`renewServerCertificate`).
+  - db01 récupère ces certificats **par WinRM** (canal authentifié, pas sur le port 636 qu'on
+    veut justement vérifier) dans `/etc/trackr/ad-ca.crt` : TrackR vérifie qu'il parle aux vrais DC.
+  - `TRACKR_AD_SERVERS` : le DC de Dunkerque d'abord, Lille ensuite (bascule automatique).
+    db01 utilise les DC comme DNS (tâche `dns` du rôle `ad_member`, réutilisée).
+  - `TRACKR_SECRET` (signature des sessions) vient du vault (`vault_trackr_secret`) ;
+    `/etc/trackr/trackr.env` est en `0640 root:trackr`.
 - **Unité durcie** (`trackr.service`) : `Restart=on-failure` + `RestartSec=5`,
   `StartLimitBurst=5` en 2 min ; `ProtectSystem=strict` avec un seul dossier inscriptible
   (`StateDirectory=trackr` → `/var/lib/trackr`) ; pas de capacités, filtre d'appels système,
@@ -724,19 +738,22 @@ la sauvegarde et les tests restent valables quand on remplacera le programme.
   (`pg_dump -Fc`, écrit en `.part` puis renommé, 7 jours gardés). Le client accepte de perdre
   une heure au plus.
 - **journald persistant** (`Storage=persistent`) : l'historique d'un plantage survit au redémarrage.
+  Connexions réussies et refusées de TrackR : `journalctl -u trackr`.
 - **Windows (srv01)** : tâche planifiée `Rapport-quotas` (7 h, SYSTEM) → CSV d'occupation des
   quotas FSRM dans `C:\Rapports`. Le service FSRM (`SrmSvc`) redémarre seul s'il plante
   (options de récupération, l'équivalent de `Restart=` : `sc.exe qfailure SrmSvc`).
 
 | Test (`playbooks/verif_trackr.yml`) | Résultat |
 |---|---|
+| connexion de `paul.durand` (GG_Exploitation) | 303 vers `/`, cookie de session |
+| connexion d'`alice.martin` (compta) | 401 ; journal : « hors du groupe GG_Exploitation » |
 | `kill -9` du processus TrackR | relancé par systemd 5 s après, nouveau PID, `/health` répond |
-| sauvegarde puis `pg_restore` dans `trackr_test` | autant de livraisons que dans `trackr` |
+| sauvegarde puis `pg_restore` dans `trackr_test` | 5 expéditions sur 5 |
 | `systemctl list-timers pg-backup.timer` | prochaine sauvegarde à l'heure pile (+ ≤ 2 min) |
-| depuis deb01 (Lille) : `http://trackr.loginord.internal:8080/livraisons` | la liste, via le VPN |
 | `Start-ScheduledTask Rapport-quotas` sur srv01 | `C:\Rapports\quotas-….csv`, résultat 0 |
 
 ```sh
+ansible-playbook site.yml -l domain_controllers --tags annuaire,ldaps   # groupe, compte, LDAPS
 ansible-playbook site.yml -l db01 --tags trackr      # changed=0 au 2e passage
 ansible-playbook site.yml -l srv01 --tags taches
 ansible-playbook playbooks/verif_trackr.yml

@@ -1,0 +1,39 @@
+---
+# Les DC refusent les connexions LDAP simples non signées : TrackR (et tout outil Linux qui
+# s'authentifie par mot de passe) passe par LDAPS, port 636. Un DC ouvre LDAPS dès qu'il a, dans
+# son magasin, un certificat « Authentification du serveur » à son nom, auquel il fait confiance.
+# Sans AD CS (PKI), on lui en fabrique un, auto-signé, que les clients reçoivent par Ansible.
+- name: Certificat LDAPS du DC
+  ansible.windows.win_powershell:
+    parameters:
+      Fqdn: "{{ inventory_hostname }}.{{ ad_domain }}"
+      Domain: "{{ ad_domain }}"
+    script: |
+      param($Fqdn, $Domain)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $serverAuth = '1.3.6.1.5.5.7.3.1'
+      $cert = Get-ChildItem Cert:\LocalMachine\My | Where-Object {
+        $_.Subject -eq "CN=$Fqdn" -and $_.HasPrivateKey -and $_.NotAfter -gt (Get-Date).AddDays(30) -and
+        $_.EnhancedKeyUsageList.ObjectId -contains $serverAuth
+      } | Sort-Object NotAfter -Descending | Select-Object -First 1
+      if (-not $cert) {
+        # Le nom du domaine aussi : un client qui vise « loginord.internal » tombe sur n'importe quel DC
+        $cert = New-SelfSignedCertificate -DnsName $Fqdn, $Domain -CertStoreLocation Cert:\LocalMachine\My `
+          -KeyExportPolicy NonExportable -NotAfter (Get-Date).AddYears(5) `
+          -TextExtension @("2.5.29.37={text}$serverAuth")
+        $Ansible.Changed = $true
+      }
+      if (-not (Test-Path "Cert:\LocalMachine\Root\$($cert.Thumbprint)")) {
+        $root = New-Object Security.Cryptography.X509Certificates.X509Store('Root', 'LocalMachine')
+        $root.Open('ReadWrite')
+        $root.Add([Security.Cryptography.X509Certificates.X509Certificate2]::new($cert.RawData))
+        $root.Close()
+        $Ansible.Changed = $true
+      }
+      # Recharger le certificat sans redémarrer AD DS (opération renewServerCertificate du RootDSE)
+      if ($Ansible.Changed) {
+        $rootDse = [ADSI]'LDAP://localhost/RootDSE'
+        $rootDse.Put('renewServerCertificate', 1)
+        $rootDse.SetInfo()
+      }

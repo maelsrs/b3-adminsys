@@ -30,5 +30,9 @@
   ansible.builtin.import_tasks: dns.yml
   tags: dns
 
+- name: LDAPS (certificat de chaque DC)
+  ansible.builtin.import_tasks: ldaps.yml
+  tags: ldaps
+
 - name: DHCP
   ansible.builtin.import_tasks: dhcp.yml

@@ -1,5 +1,16 @@
 ---
 trackr_port: 8080
 trackr_db: trackr
+# Socket Unix, authentification « peer » : le compte système trackr = le rôle PostgreSQL trackr
+trackr_db_url: "postgresql:///{{ trackr_db }}"
+trackr_demo: true
+# Seuls les membres de ce groupe AD entrent (groupes imbriqués compris)
+trackr_ad_group: GG_Exploitation
+# Les DC, ceux du site d'abord : TrackR passe au suivant si le premier ne répond pas
+trackr_ad_servers: >-
+  {{ (groups['domain_controllers'] | map('extract', hostvars) | selectattr('ad_site', 'eq', ad_site)
+      | map(attribute='inventory_hostname') | list)
+   + (groups['domain_controllers'] | map('extract', hostvars) | rejectattr('ad_site', 'eq', ad_site)
+      | map(attribute='inventory_hostname') | list) }}
 trackr_backup_dir: /var/backups/pg
 trackr_backup_days: 7

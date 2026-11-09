@@ -1,10 +1,19 @@
 ---
-# MC11 : TrackR en service systemd durci, base sauvegardée toutes les heures par un timer.
-# TrackR tourne à côté de sa base, sur db01 (Dunkerque) : rien ne dépend du lien inter-sites.
-- name: Paquets (pilote PostgreSQL de Python ; acl pour que become_user postgres/trackr marche)
+# MC11 : TrackR (files/trackr = trackr.py du prestataire, inchangé) en service systemd durci,
+# base sauvegardée toutes les heures par un timer. TrackR tourne à côté de sa base, sur db01
+# (Dunkerque) : la base ne dépend pas du lien inter-sites, et la connexion passe d'abord par
+# le DC de Dunkerque.
+# python3-psycopg2 : PostgreSQL ; python3-ldap3 : connexion AD ; acl : become_user postgres
+- name: Paquets
   ansible.builtin.apt:
-    name: [python3-psycopg2, acl]
+    name: [python3-psycopg2, python3-ldap3, acl]
     state: present
+
+# TrackR trouve les DC par leur nom (certificats LDAPS à ce nom)
+- name: DNS de l'AD
+  ansible.builtin.include_role:
+    name: ad_member
+    tasks_from: dns
 
 # Journaux conservés au redémarrage : sans ça, l'historique d'un plantage disparaît avec lui
 - name: Dossier des réglages journald
@@ -45,18 +54,6 @@
   become: true
   become_user: postgres
 
-- name: Table des livraisons
-  community.postgresql.postgresql_query:
-    db: "{{ trackr_db }}"
-    login_user: trackr
-    query: >-
-      CREATE TABLE IF NOT EXISTS livraisons (
-        id serial PRIMARY KEY, camion text NOT NULL, destination text NOT NULL,
-        cree_le timestamptz NOT NULL DEFAULT now())
-  become: true
-  become_user: trackr
-  changed_when: false
-
 - name: Programme TrackR
   ansible.builtin.copy:
     src: trackr
@@ -70,11 +67,44 @@
     state: directory
     mode: "0755"
 
+# Le certificat de chaque DC, lu par WinRM (canal authentifié) plutôt que sur le port 636
+- name: Certificats LDAPS des DC
+  ansible.windows.win_powershell:
+    parameters:
+      Fqdn: "{{ item }}.{{ ad_domain }}"
+    script: |
+      param($Fqdn)
+      $Ansible.Changed = $false
+      $c = Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -eq "CN=$Fqdn" -and $_.HasPrivateKey } |
+        Sort-Object NotAfter -Descending | Select-Object -First 1
+      if (-not $c) { throw "Pas de certificat LDAPS sur $Fqdn : rôle ad_dc, --tags ldaps" }
+      $b64 = [Convert]::ToBase64String($c.RawData, 'InsertLineBreaks') -replace "`r", ''
+      "-----BEGIN CERTIFICATE-----`n$b64`n-----END CERTIFICATE-----"
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['domain_controllers'] }}"
+  register: trackr_dc_certs
+  check_mode: false
+
+- name: Certificats des DC, pour vérifier qu'on parle bien à eux
+  ansible.builtin.copy:
+    dest: /etc/trackr/ad-ca.crt
+    content: |
+      {% for r in trackr_dc_certs.results %}
+      # {{ r.item }}
+      {{ r.output[0] }}
+      {% endfor %}
+    mode: "0644"
+  notify: Relancer TrackR
+
+# Le secret de session est dedans : lisible par root et le groupe trackr seulement
 - name: Configuration TrackR
   ansible.builtin.template:
     src: trackr.env.j2
     dest: /etc/trackr/trackr.env
-    mode: "0644"
+    owner: root
+    group: trackr
+    mode: "0640"
+  diff: false
   notify: Relancer TrackR
 
 - name: Unité trackr.service
