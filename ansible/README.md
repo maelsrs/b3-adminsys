@@ -14,6 +14,7 @@ graph TD
     ldap01["ldap01 — OpenLDAP prestataires\n10.1.10.21\nDebian"]
     srv01["srv01 — membre AD, partages\n10.1.10.30\nWindows Server Core"]
     win02["win02 — DC racine\n10.1.10.10\nWindows Server"]
+    mon01["mon01 — supervision + journaux\n10.1.10.22\nDebian (Prometheus)"]
     rtr_a["rtr-a\neth1 10.1.10.1/24\neth2 192.0.2.1/24\nwg0 10.255.0.1/30"]
   end
 
@@ -31,14 +32,13 @@ graph TD
   ldap01 -->|"10.1.0.0/16 via 10.1.10.1"| rtr_a
   srv01 -->|"GW 10.1.10.1"| rtr_a
   win02 -->|"GW 10.1.10.1"| rtr_a
+  mon01 -->|"10.1.0.0/16 via 10.1.10.1"| rtr_a
   win01 -->|"GW 10.1.20.1"| rtr_b
   db01 -->|"10.1.0.0/16 via 10.1.20.1"| rtr_b
 
-  rtr_a -. "eth0 (mgmt Ansible)\n192.168.0.40" .-> ctrl
-  rtr_b -. "eth0 (mgmt Ansible)\n192.168.0.49" .-> ctrl
-  deb01 -. "eth0\n192.168.0.38" .-> ctrl
-  ldap01 -. "eth0\n192.168.0.12" .-> ctrl
-  rtr_a -. "OpenVPN (10.1.10.23)\npousse 10.1.0.0/16\nWinRM vers les DC" .-> ctrl
+  rtr_a -. "eth0 (mgmt Ansible, DHCP)" .-> ctrl
+  rtr_b -. "eth0 (mgmt Ansible, DHCP)" .-> ctrl
+  openvpn["openvpn — 10.1.10.23"] -. "pousse 10.1.0.0/16 (VPN)\nAnsible joint les VM par leur IP LAN" .-> ctrl
 
   ctrl(["Contrôleur Ansible"])
 
